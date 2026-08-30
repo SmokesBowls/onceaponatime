@@ -49,7 +49,7 @@ The framework is the durable product. The model is a replaceable intelligence pr
 
 The framework must contain **no hard-coded story identities**.
 
-No framework component should know or care whether a character is named Alice, Bob, Jane, a title, an alias, or is not yet named at all.
+No framework component should know or care what human-facing name, title, alias, role label, or temporary description a project assigns to an entity.
 
 No framework component should be written specifically for one novel, game, screenplay, campaign, genre, or fictional universe.
 
@@ -86,29 +86,29 @@ scene_001
 
 These identifiers are framework-facing identities.
 
-Human-facing names are attributes attached to those identities.
+Human-facing names and working labels are attributes attached to those identities.
 
-Example:
+A project may begin with only temporary labels:
 
 ```json
 {
   "id": "actor_001",
   "identity": {
     "name": null,
-    "working_label": "the traveler",
+    "working_label": "actor_a",
     "aliases": []
   }
 }
 ```
 
-Later the author may name the character:
+Later the project may fill the character sheet with a human-facing name without changing the internal identity:
 
 ```json
 {
   "id": "actor_001",
   "identity": {
-    "name": "Example Name",
-    "working_label": "the traveler",
+    "name": "<project_supplied_name>",
+    "working_label": "actor_a",
     "aliases": []
   }
 }
@@ -116,11 +116,13 @@ Later the author may name the character:
 
 Everything already associated with `actor_001` remains attached to the same entity. Naming the character does not create a new identity and does not require rewriting existing story state.
 
+Temporary labels may be as neutral as `actor_a`, `actor_b`, and `actor_c`. A project may also temporarily use a role-like working label such as `villain_a`, but that working label is project data, not the entity's permanent framework identity.
+
 ### 2.2 Roles Are Not Identities
 
-Narrative roles must not be permanently encoded into entity IDs.
+Narrative roles must not be permanently encoded into stable entity IDs.
 
-Avoid permanent identities such as:
+Avoid permanent internal identities such as:
 
 ```text
 hero_a
@@ -163,13 +165,23 @@ Identity and narrative function are separate concerns.
 
 ## 3. Author Language vs. Framework Language
 
-The author should be able to speak naturally.
+The author should be able to speak naturally using whatever names, labels, aliases, or descriptions exist in the loaded project.
 
-The author might write:
+The framework resolves those references into stable entities before operating on story state.
 
-> The traveler hands the mechanic the map.
+Conceptually:
 
-The framework resolves the language into stable entities and an event representation:
+```text
+PROJECT LANGUAGE
+      ↓
+ENTITY RESOLUTION
+      ↓
+actor_001 / actor_002 / object_004
+      ↓
+STORY STATE
+```
+
+A resolved event may look like:
 
 ```json
 {
@@ -181,18 +193,6 @@ The framework resolves the language into stable entities and an event representa
 ```
 
 The author should never be required to write `actor_001` in normal creative work unless they explicitly want to inspect or edit framework state.
-
-The framework therefore needs an identity-resolution layer:
-
-```text
-AUTHOR LANGUAGE
-      ↓
-ENTITY RESOLUTION
-      ↓
-STABLE FRAMEWORK IDENTITIES
-      ↓
-STORY STATE
-```
 
 This allows the human-facing story to remain expressive while the underlying state remains precise.
 
@@ -917,4 +917,4 @@ thread_005 remains unresolved
 
 It should not require any particular character name, fictional world, genre, plot, or existing project to make those relationships meaningful.
 
-**Names are story data. Roles are mutable state. Stable identities are framework references. Storytelling behavior is framework responsibility.**
+**Names are project data. Working labels are project data. Roles are mutable state. Stable identities are framework references. Storytelling behavior is framework responsibility.**
