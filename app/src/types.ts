@@ -12,6 +12,30 @@ export type OperatingMode =
   | 'TRANSFORMATION'
   | 'ANALYSIS';
 
+export interface InferenceReceipt {
+  readonly broker: 'Hermes';
+  readonly requestId: string;
+  readonly operation: string;
+  readonly actualProvider: string;
+  readonly actualModel: string;
+  readonly fallbackUsed: boolean;
+  readonly fallbackIndex: number;
+  readonly routeAttemptCount: number;
+}
+
+export interface InferenceArtifact<T> {
+  readonly value: T;
+  readonly receipt: InferenceReceipt;
+}
+
+export function createInferenceArtifact<T>(
+  value: T,
+  receipt: InferenceReceipt,
+): InferenceArtifact<T> {
+  Object.freeze(receipt);
+  return Object.freeze({ value, receipt });
+}
+
 export interface EntityIdentity {
   name: string | null;
   working_label: string;
@@ -418,6 +442,9 @@ export interface BeatPlanStage1 {
   distance_budget: NarrativeDistance;
   plan_notes?: string;
 }
+
+export type Stage1PlanningArtifact = InferenceArtifact<BeatPlanStage1>;
+export type Stage2RenderingArtifact = InferenceArtifact<string>;
 
 export interface ValidationDiagnostic {
   severity: 'FATAL' | 'WARNING' | 'INFO';

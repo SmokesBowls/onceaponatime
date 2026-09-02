@@ -1,3 +1,6 @@
+import { GoogleGenAI } from '@google/genai';
+import type { InferenceReceipt } from '../src/types';
+
 export interface GenerateTextParams {
   operation?: string;
   systemPrompt?: string;
@@ -15,29 +18,27 @@ export interface GenerateTextResult {
   receipt?: InferenceReceipt;
 }
 
-export interface InferenceReceipt {
-  readonly broker: 'Hermes';
-  readonly requestId: string;
-  readonly operation: string;
-  readonly actualProvider: string;
-  readonly actualModel: string;
-  readonly fallbackUsed: boolean;
-  readonly fallbackIndex: number;
-  readonly routeAttemptCount: number;
-}
-
 export interface HermesGenerateTextResult extends GenerateTextResult {
   readonly text: string;
   readonly receipt: InferenceReceipt;
 }
 
+export interface ReceiptBearingGenerateTextParams extends GenerateTextParams {
+  readonly operation: string;
+}
+
+export interface ReceiptBearingModelProvider {
+  readonly name: string;
+  isAvailable(): boolean;
+  generateText(params: ReceiptBearingGenerateTextParams): Promise<HermesGenerateTextResult>;
+}
+
+/** Transitional provider contract for the legacy receipt-optional Gemini path. */
 export interface ModelProvider {
   name: string;
   isAvailable(): boolean;
   generateText(params: GenerateTextParams): Promise<GenerateTextResult>;
 }
-
-import { GoogleGenAI } from '@google/genai';
 
 interface HermesProviderOptions {
   baseUrl?: string;
@@ -66,7 +67,7 @@ function requireNonEmptyString(value: unknown, field: string): string {
   return value.trim();
 }
 
-export class HermesProvider implements ModelProvider {
+export class HermesProvider implements ReceiptBearingModelProvider {
   readonly name = 'Hermes';
   private readonly baseUrl: string;
   private readonly apiKey: string;
