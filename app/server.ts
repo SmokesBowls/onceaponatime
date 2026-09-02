@@ -85,7 +85,8 @@ app.post('/api/framework/execute', async (req, res) => {
     });
 
     // STEP 2: Stage 1 Beat Planner (Produces structured JSON only)
-    const stage1Plan = await planNarrativeBeat(generationContext, authorPrompt);
+    const stage1Artifact = await planNarrativeBeat(generationContext, authorPrompt);
+    const stage1Plan = stage1Artifact.value;
 
     // STEP 3: Stage 2 Prose Renderer (Renders prose faithful to the approved plan)
     const stage2Prose = await renderNarrativeProse(generationContext, stage1Plan);
@@ -108,7 +109,7 @@ app.post('/api/framework/execute', async (req, res) => {
     return res.json({
       success: true,
       contextPackage: generationContext,
-      stage1: stage1Plan,
+      stage1: stage1Artifact,
       stage2Prose,
       validation: validationReport,
     });

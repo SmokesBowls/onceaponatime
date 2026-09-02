@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { compileGenerationContext } from '../server/contextCompiler';
 import { planNarrativeBeat } from '../server/narrativePipeline';
 import { DEFAULT_PROJECTS } from '../src/data/defaultProjects';
-import { ModelProvider } from '../server/modelProvider';
+import { ReceiptBearingModelProvider } from '../server/modelProvider';
 
 async function runFailClosedProviderTest() {
   const project = DEFAULT_PROJECTS[0];
@@ -14,7 +14,7 @@ async function runFailClosedProviderTest() {
     narrativeDistance: 'BEAT',
   });
 
-  const unavailableProvider: ModelProvider = {
+  const unavailableProvider: ReceiptBearingModelProvider = {
     name: 'unavailable-test-provider',
     isAvailable: () => false,
     generateText: async () => {

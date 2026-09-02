@@ -332,6 +332,14 @@ export class GeminiProvider implements ModelProvider {
 
 // Singleton provider instance
 let defaultProvider: ModelProvider | null = null;
+let stage1Provider: ReceiptBearingModelProvider | null = null;
+
+export function getStage1ModelProvider(): ReceiptBearingModelProvider {
+  if (!stage1Provider) {
+    stage1Provider = new HermesProvider();
+  }
+  return stage1Provider;
+}
 
 export function getModelProvider(): ModelProvider {
   if (!defaultProvider) {

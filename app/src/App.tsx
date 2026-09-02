@@ -18,6 +18,7 @@ import {
   HistoryReceipt,
   RevealEntity,
   FactEntity,
+  createInferenceArtifact,
 } from './types';
 
 export default function App() {
@@ -161,6 +162,8 @@ export default function App() {
         throw new Error(data.error);
       }
 
+      const stage1Artifact = createInferenceArtifact(data.stage1.value, data.stage1.receipt);
+
       // Formulate candidate generation for author review
       const newCandidate: CandidateGeneration = {
         id: `cand_${Date.now()}`,
@@ -168,7 +171,7 @@ export default function App() {
         operation: params.operation,
         narrativeDistance: params.narrativeDistance,
         prompt: params.authorPrompt,
-        stage1Plan: data.stage1,
+        stage1Artifact,
         stage2Prose: data.stage2Prose || 'Prose generation completed.',
         validation: data.validation || {
           passed: false,
@@ -354,7 +357,7 @@ export default function App() {
       }
 
       // Apply thread advancements from Stage 1 plan & extraction
-      const threadsAdvanced = candidate.stage1Plan?.threads_advanced || [];
+      const threadsAdvanced = candidate.stage1Artifact.value.threads_advanced || [];
       for (const thId of threadsAdvanced) {
         const th = updatedThreads.find((t) => t.id === thId);
         if (th) {
@@ -392,7 +395,7 @@ export default function App() {
         new Set([
           activeProject.activePovActorId,
           ...extractedMentions.map((m) => m.entity_id),
-          ...(candidate.stage1Plan?.permitted_entities_involved || []),
+          ...(candidate.stage1Artifact.value.permitted_entities_involved || []),
         ])
       );
 
@@ -401,7 +404,7 @@ export default function App() {
         time_index: `T${newBeatNumber}`,
         operation_id: operationId,
         timestamp: Date.now(),
-        label: `Beat #${newBeatNumber}: ${candidate.stage1Plan?.intended_action || 'Canonized Beat'}`,
+        label: `Beat #${newBeatNumber}: ${candidate.stage1Artifact.value.intended_action || 'Canonized Beat'}`,
         beat_ref: `Beat ${newBeatNumber}`,
         previous_story_position: { ...activeProject.currentPosition },
         resulting_story_position: {
@@ -471,7 +474,7 @@ export default function App() {
         body: JSON.stringify({
           project: activeProject,
           candidateProse: text,
-          stage1Plan: candidate.stage1Plan,
+          stage1Plan: candidate.stage1Artifact.value,
           narrativeDistance: candidate.narrativeDistance,
           povActorId: activeProject.activePovActorId,
         }),

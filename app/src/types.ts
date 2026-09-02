@@ -468,7 +468,7 @@ export interface CandidateGeneration {
   operation: OperatingMode;
   narrativeDistance: NarrativeDistance;
   prompt: string;
-  stage1Plan?: BeatPlanStage1;
+  stage1Artifact: Stage1PlanningArtifact;
   stage2Prose: string;
   validation: ValidationReport;
   contextPackage: any;

@@ -1,6 +1,11 @@
 import { validateCandidateProse, planNarrativeBeat } from '../server/narrativePipeline';
 import { compileGenerationContext, compileValidationContext } from '../server/contextCompiler';
-import { StoryProject, GenerationContext, ValidationContext } from '../src/types';
+import {
+  StoryProject,
+  GenerationContext,
+  ValidationContext,
+  InferenceReceipt,
+} from '../src/types';
 
 function assert(condition: boolean, message: string) {
   if (!condition) {
@@ -145,6 +150,16 @@ async function runValidationTests() {
   console.log('--- TEST 1: Stage 1 Plan Verification Truthfulness ---');
 
   // Online / Normalized Stage 1 Plan must not claim knowledge_verified or reveals_protected
+  const stage1Receipt: InferenceReceipt = Object.freeze({
+    broker: 'Hermes',
+    requestId: 'validation-stage1-request',
+    operation: 'onceaponatime.stage1.plan',
+    actualProvider: 'validation-test-provider',
+    actualModel: 'validation-test-model',
+    fallbackUsed: false,
+    fallbackIndex: 0,
+    routeAttemptCount: 1,
+  });
   const mockPlanWithEmptyResolved = {
     name: 'mock_online_planner',
     isAvailable: () => true,
@@ -160,18 +175,18 @@ async function runValidationTests() {
         distance_budget: 'BEAT',
         plan_notes: 'Checking empty resolved threads',
       }),
-      providerName: 'mock_online_planner',
+      receipt: stage1Receipt,
     }),
   };
 
-  const normalizedPlan = await planNarrativeBeat(genCtx, 'Examines parchment', mockPlanWithEmptyResolved);
+  const normalizedArtifact = await planNarrativeBeat(genCtx, 'Examines parchment', mockPlanWithEmptyResolved);
 
   assert(
-    normalizedPlan.knowledge_verified === false,
+    normalizedArtifact.value.knowledge_verified === false,
     'Normalized Stage 1 plan sets knowledge_verified: false'
   );
   assert(
-    normalizedPlan.reveals_protected === false,
+    normalizedArtifact.value.reveals_protected === false,
     'Normalized Stage 1 plan sets reveals_protected: false'
   );
 

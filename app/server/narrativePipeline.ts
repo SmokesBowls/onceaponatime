@@ -7,8 +7,15 @@ import {
   OperatingMode,
   NarrativeDistance,
   MentionRecord,
+  Stage1PlanningArtifact,
+  createInferenceArtifact,
 } from '../src/types';
-import { getModelProvider, ModelProvider } from './modelProvider';
+import {
+  getModelProvider,
+  getStage1ModelProvider,
+  ModelProvider,
+  ReceiptBearingModelProvider,
+} from './modelProvider';
 import { detectEntityInteractions } from '../src/lib/codexEngine';
 
 /**
@@ -25,8 +32,8 @@ import { detectEntityInteractions } from '../src/lib/codexEngine';
 export async function planNarrativeBeat(
   generationContext: GenerationContext,
   authorPrompt: string,
-  provider: ModelProvider = getModelProvider()
-): Promise<BeatPlanStage1> {
+  provider: ReceiptBearingModelProvider = getStage1ModelProvider()
+): Promise<Stage1PlanningArtifact> {
   const povActor = generationContext.activePovActor;
   const distance = generationContext.narrativeDistance;
   const op = generationContext.operatingMode;
@@ -71,20 +78,17 @@ Respond with valid JSON conforming to this exact schema:
     throw new Error(`Model provider "${provider.name}" is unavailable.`);
   }
 
-  try {
-    const { text } = await provider.generateText({
-      systemPrompt,
-      userPrompt,
-      jsonMode: true,
-      temperature: 0.3,
-    });
+  const { text, receipt } = await provider.generateText({
+    operation: 'onceaponatime.stage1.plan',
+    systemPrompt,
+    userPrompt,
+    jsonMode: true,
+    temperature: 0.3,
+  });
 
-    const parsed = JSON.parse(text);
-    return validateAndNormalizePlan(parsed, generationContext);
-  } catch (err: any) {
-    console.warn('[Stage 1 Planner] Model failed, falling back to local planner:', err?.message || err);
-    return generateLocalPlan(generationContext, authorPrompt);
-  }
+  const parsed = JSON.parse(text);
+  const plan = validateAndNormalizePlan(parsed, generationContext);
+  return createInferenceArtifact(plan, receipt);
 }
 
 function validateAndNormalizePlan(
@@ -139,26 +143,6 @@ function validateAndNormalizePlan(
     threads_resolved: rawResolvedThreads.filter((tId: string) => resolvableThreadIds.has(tId)),
     distance_budget: distance,
     plan_notes: typeof plan?.plan_notes === 'string' ? plan.plan_notes : 'Validated Stage 1 Plan',
-  };
-}
-
-function generateLocalPlan(ctx: GenerationContext, prompt: string): BeatPlanStage1 {
-  const povId = ctx.activePovActor.id;
-  const localEntities = [povId, ...(ctx.relevantPossessions.map((p) => p.id))];
-  const localThreadsAdvanced = ctx.relevantOpenThreads.slice(0, 1).map((t) => t.id);
-
-  return {
-    beat_type: ctx.narrativeDistance === 'FRAGMENT' ? 'observation' : 'action',
-    primary_actor_id: povId,
-    intended_action: prompt || `Observes and interacts cautiously within ${ctx.currentLocation?.working_label || 'the current chamber'}`,
-    permitted_entities_involved: localEntities,
-    permitted_state_transitions: ['attention focused on immediate focal point'],
-    knowledge_verified: false,
-    reveals_protected: false, // Stage 1 local planner does not manufacture reveal verification
-    threads_advanced: localThreadsAdvanced,
-    threads_resolved: [],
-    distance_budget: ctx.narrativeDistance,
-    plan_notes: 'Generated via Onceaponatime local deterministic planning engine.',
   };
 }
 

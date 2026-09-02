@@ -265,7 +265,7 @@ export const StoryEditor: React.FC<StoryEditorProps> = ({
             </div>
 
             {/* Stage 1 Plan Summary */}
-            {candidate.stage1Plan && (
+            {candidate.stage1Artifact && (
               <div className="bg-white/10 rounded p-4 text-xs font-sans space-y-2 text-white/90 border border-white/10">
                 <div className="flex items-center justify-between">
                   <div className="font-bold text-[11px] uppercase tracking-wider text-[#E5E2D9] flex items-center gap-1.5">
@@ -284,13 +284,13 @@ export const StoryEditor: React.FC<StoryEditorProps> = ({
                 </div>
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 mt-1">
                   <div>
-                    <span className="text-white/50 uppercase text-[10px]">Beat Type:</span> {candidate.stage1Plan.beat_type}
+                    <span className="text-white/50 uppercase text-[10px]">Beat Type:</span> {candidate.stage1Artifact.value.beat_type}
                   </div>
                   <div>
-                    <span className="text-white/50 uppercase text-[10px]">Primary Actor:</span> {candidate.stage1Plan.primary_actor_id}
+                    <span className="text-white/50 uppercase text-[10px]">Primary Actor:</span> {candidate.stage1Artifact.value.primary_actor_id}
                   </div>
                   <div className="sm:col-span-2">
-                    <span className="text-white/50 uppercase text-[10px]">Intended Action:</span> {candidate.stage1Plan.intended_action}
+                    <span className="text-white/50 uppercase text-[10px]">Intended Action:</span> {candidate.stage1Artifact.value.intended_action}
                   </div>
                 </div>
 
