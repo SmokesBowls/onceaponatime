@@ -68,7 +68,7 @@ Respond with valid JSON conforming to this exact schema:
 }`;
 
   if (!provider.isAvailable()) {
-    return generateLocalPlan(generationContext, authorPrompt);
+    throw new Error(`Model provider "${provider.name}" is unavailable.`);
   }
 
   try {
