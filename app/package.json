@@ -11,6 +11,7 @@
     "lint": "tsc --noEmit",
     "test": "npm run test:hermes-provider && npm run test:fail-closed && tsx tests/epistemicContextCompiler.test.ts && tsx tests/validationVerification.test.ts && tsx tests/codexProgressiveMemory.test.ts",
     "test:hermes-provider": "tsx tests/hermesProvider.test.ts",
+    "test:receipt-interfaces": "tsx tests/receiptBearingInterfaces.test.ts",
     "test:fail-closed": "tsx tests/failClosedProvider.test.ts"
   },
   "dependencies": {
