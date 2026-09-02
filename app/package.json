@@ -9,7 +9,8 @@
     "start": "node dist/server.cjs",
     "clean": "rm -rf dist server.js",
     "lint": "tsc --noEmit",
-    "test": "npm run test:fail-closed && tsx tests/epistemicContextCompiler.test.ts && tsx tests/validationVerification.test.ts && tsx tests/codexProgressiveMemory.test.ts",
+    "test": "npm run test:hermes-provider && npm run test:fail-closed && tsx tests/epistemicContextCompiler.test.ts && tsx tests/validationVerification.test.ts && tsx tests/codexProgressiveMemory.test.ts",
+    "test:hermes-provider": "tsx tests/hermesProvider.test.ts",
     "test:fail-closed": "tsx tests/failClosedProvider.test.ts"
   },
   "dependencies": {
