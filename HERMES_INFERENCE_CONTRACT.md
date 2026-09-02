@@ -122,7 +122,7 @@ Success requires:
 - boolean `fallback_used`;
 - integer `fallback_index`, where primary is `0`;
 - `fallback_used` equals `fallback_index > 0`;
-- positive integer `attempt_count` covering all attempted routes and retries.
+- positive integer `attempt_count` covering configured provider/model routes attempted. Same-route transport retries and credential-pool rotations remain internal to that route and do not increment this field.
 
 The model identifier must describe the route that actually executed the successful request. When an upstream reports a more specific model identifier, Hermes records that value. Hermes may use its resolved target identifier only when the route deterministically binds that target. A router that can conceal the executing model cannot satisfy this contract without upstream attestation.
 
@@ -161,7 +161,7 @@ Hermes resolves:
 2. bounded retries for that exact route;
 3. configured `fallback_providers` in order.
 
-A fallback is any successful route with `fallback_index > 0`. Credential-pool rotation that preserves the same provider/model route is a retry, not a model fallback.
+A fallback is any successful route with `fallback_index > 0`. Credential-pool rotation or a transport retry that preserves the same provider/model route is internal to one route attempt, not a model fallback.
 
 Hermes must never silently claim the primary executed when a fallback did. If no route succeeds, it returns `status: failed`.
 
