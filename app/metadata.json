@@ -1,0 +1,6 @@
+{
+  "name": "Onceaponatime",
+  "description": "A model-agnostic storytelling framework and literary mechanics engine with entity resolution, relational memory, knowledge boundaries, and rewrite contracts.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

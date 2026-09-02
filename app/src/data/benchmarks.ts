@@ -1,0 +1,230 @@
+import { BenchmarkTestCase } from '../types';
+
+export const BENCHMARK_TESTS: BenchmarkTestCase[] = [
+  {
+    id: 'test_1_narrative_distance',
+    title: 'Test 1: Narrative Distance Enforcement',
+    category: 'Pacing & Scope Discipline',
+    description: 'Provide an unfinished tension beat and request "What happens next?" with BEAT scale. Test whether the model stops after one beat or resolves the entire scene/conflict.',
+    setupSummary: 'Actor_001 hears a faint rustle behind the iron filing cabinet while searching for the stolen key.',
+    prompt: 'What happens next?',
+    requestedDistance: 'BEAT',
+    constraints: {
+      protectedInvariants: ['Scene must remain in progress', 'Do NOT resolve who is behind the cabinet'],
+    },
+    nakedModelBehavior: {
+      flawName: 'Premature Climax Resolution & Scope Bleed',
+      explanation: 'Ungoverned chat models interpret "What happens next?" as permission to finish the chapter. They generate the ambush, the duel, the confession, and the return of the key all in one turn.',
+      sampleViolationOutput: 'Master Locke whirled around and fired his pistol. The shadowy figure leaped forward, dropped the stolen master key, confessed to working for the magistrate, and Mara tied him up as dawn broke over the city.',
+    },
+    frameworkBehavior: {
+      remedyName: 'Narrative Distance Token Budget & Stage 1 Beat Planning',
+      explanation: 'Onceaponatime constrains output to exactly 1 action/reaction transition (BEAT), preserving unresolved tension and author control.',
+      sampleCompliantOutput: 'Master Locke froze, his fingers tightening against the lip of the cedar drawer. In the suffocating stillness, a second scrape resonated—metal catching against stone just beyond the cabinet.',
+    },
+  },
+  {
+    id: 'test_2_character_consistency',
+    title: 'Test 2: Character Consistency & Trait Invariants',
+    category: 'Character Integrity',
+    description: 'Establish a strict trait (e.g. methodical, non-violent horologist) and present a situation where violating it would be narratively convenient (e.g. killing a suspect immediately).',
+    setupSummary: 'Actor_001 (Methodical: 0.9, Combat: 0.2, Pacifist code) corners an intruder holding a fragile clockwork blueprint.',
+    prompt: 'Locke needs to stop the thief immediately before he destroys the parchment.',
+    requestedDistance: 'BEAT',
+    constraints: {
+      protectedInvariants: ['Actor_001 trait compliance', 'Avoid out-of-character brutal violence'],
+    },
+    nakedModelBehavior: {
+      flawName: 'Out-of-Character Convenient Escalation',
+      explanation: 'The naked model resorts to action movie tropes, having an elderly scholarly horologist execute martial arts takedowns.',
+      sampleViolationOutput: 'Locke sprinted across the desk, delivered a flying roundhouse kick to the thief\'s jaw, and pinned him to the floor with a deadly chokehold.',
+    },
+    frameworkBehavior: {
+      remedyName: 'Trait Weight Filtering & Current State Conditioning',
+      explanation: 'The framework bounds actor reactions to their defined behavioral traits (methodical, low combat capability).',
+      sampleCompliantOutput: 'Rather than rushing forward, Locke slammed the heavy bronze pendulum switch down, tripping the workbench magnetic damper to jam the copper blueprint case in place.',
+    },
+  },
+  {
+    id: 'test_3_knowledge_separation',
+    title: 'Test 3: Knowledge Separation & Leakage Prevention',
+    category: 'Epistemic Boundaries',
+    description: 'Provide actor_001 with secret knowledge (fact_003: the vault was breached via the sewer grate) that actor_002 is forbidden from knowing. Have actor_002 speak or decide next action.',
+    setupSummary: 'Actor_002 (Mara) is guarding the hallway. Fact_003 is in actor_002\'s forbidden_knowledge list.',
+    prompt: 'Mara suggests a search direction to Locke.',
+    requestedDistance: 'EXCHANGE',
+    constraints: {
+      forbiddenKnowledgeFactId: 'fact_003',
+      protectedInvariants: ['Actor_002 must not reference the sewer grate or sewer tunnel'],
+    },
+    nakedModelBehavior: {
+      flawName: 'Omniscient Actor Leakage (Information Bleed)',
+      explanation: 'Naked LLMs mix author/world knowledge into all characters indiscriminately, causing secondary characters to miraculously guess secrets.',
+      sampleViolationOutput: '"Locke, they must have entered through the subterranean sewer grate beneath the East conduit," Mara said immediately, despite having never seen the sewer.',
+    },
+    frameworkBehavior: {
+      remedyName: 'Active Perspective Epistemic Filter',
+      explanation: 'Onceaponatime passes only verified actor_knowledge to the prompt and runs validator checks for forbidden knowledge keywords.',
+      sampleCompliantOutput: '"We should check the service stairwell first," Mara murmured, her gaze scanning the intact exterior bolts. "Unless they had a duplicate key, they couldn\'t have come from the street."',
+    },
+  },
+  {
+    id: 'test_4_false_belief',
+    title: 'Test 4: False Belief Preservation vs World Truth',
+    category: 'Dramatic Irony & Epistemics',
+    description: 'World truth: The display case held counterfeit glass. Actor_001 sincerely believes it held the genuine legendary diamond. Measure whether the prose preserves the false belief without corrupting world truth.',
+    setupSummary: 'World Truth: fake replica. Actor_001 Belief: authentic priceless artifact.',
+    prompt: 'Locke examines the broken velvet cushion and laments the loss.',
+    requestedDistance: 'BEAT',
+    constraints: {
+      protectedInvariants: ['Preserve actor\'s sincere belief in genuine diamond without changing world truth'],
+    },
+    nakedModelBehavior: {
+      flawName: 'Narrator Retconning / Accidental Revelation',
+      explanation: 'The naked model either alters the actor\'s mind ("Locke suddenly realized it was a fake") or alters world canon to match the actor\'s belief.',
+      sampleViolationOutput: 'Locke sighed, knowing that the priceless diamond was gone—though little did he know, it was just a cheap piece of glass sitting in the vault all along.',
+    },
+    frameworkBehavior: {
+      remedyName: 'Belief Separation Architecture',
+      explanation: 'The engine keeps actor belief state completely isolated from world truth, preserving authentic dramatic irony without breaking canon.',
+      sampleCompliantOutput: '"Forty years of astronomical calculations lost," Locke whispered, his voice trembling as he touched the empty velvet where the Solace gemstone had rested.',
+    },
+  },
+  {
+    id: 'test_5_delayed_reveal',
+    title: 'Test 5: Delayed Reveal & Foreshadowing Discipline',
+    category: 'Information Release Control',
+    description: 'Reveal_001 is LOCKED (the patron is the Lord Mayor). Allowed: subtle pipe tobacco scent, wax seal. Forbidden: naming the Mayor or explicit realization.',
+    setupSummary: 'Locke finds a dropped calling card or handkerchief in the vault.',
+    prompt: 'Locke discovers a subtle clue left behind near the clockwork altar.',
+    requestedDistance: 'BEAT',
+    constraints: {
+      forbiddenRevealId: 'reveal_001',
+    },
+    nakedModelBehavior: {
+      flawName: 'Premature Clue Spoilage',
+      explanation: 'The naked model cannot resist solving the mystery, having Locke immediately deduce the final villain from a single vague clue.',
+      sampleViolationOutput: 'Locke picked up the scrap of silk and noticed the Mayor\'s monogrammed seal. "The Lord Mayor is behind this whole conspiracy!" he declared.',
+    },
+    frameworkBehavior: {
+      remedyName: 'Reveal Lockbox with Foreshadowing Grammar',
+      explanation: 'Onceaponatime enforces the allowed_before_unlock grammar (subtle sensory hints) while blocking direct deductions.',
+      sampleCompliantOutput: 'Beneath the mahogany leg, Locke retrieved a torn scrap of imported crimson ribbon, faintly fragrant with the sweet, spiced aroma of Virginian pipe leaf.',
+    },
+  },
+  {
+    id: 'test_6_object_continuity',
+    title: 'Test 6: Object Continuity & Relational Possession',
+    category: 'Physical Relational Continuity',
+    description: 'Object_001 (Astrolabe) is held by actor_003 in location_002 (Conduit). Test whether actor_001 or actor_002 in location_001 can mistakenly use or inspect it.',
+    setupSummary: 'Actor_001 searches their own pockets and workbench for equipment.',
+    prompt: 'Locke prepares his tools to inspect the lock mechanism.',
+    requestedDistance: 'BEAT',
+    constraints: {
+      displacedObjectId: 'object_001',
+      protectedInvariants: ['Object_001 is missing and not available to actor_001'],
+    },
+    nakedModelBehavior: {
+      flawName: 'Phantom Item Hallucination',
+      explanation: 'The model forgets who is holding the key object and places it back into the protagonist\'s hands for convenience.',
+      sampleViolationOutput: 'Locke pulled the Astrolabe from his coat, checked the gears on its dial, and used its pointer to calibrate the vault lock.',
+    },
+    frameworkBehavior: {
+      remedyName: 'Relational Graph Possession Enforcement',
+      explanation: 'Possessions are tracked in the graph; unavailable objects cannot be referenced as active inventory.',
+      sampleCompliantOutput: 'Locke reached for his pocket magnifier and the brass bullseye lantern, his hand hovering wistfully over the empty slot in his leather tool roll.',
+    },
+  },
+  {
+    id: 'test_7_location_continuity',
+    title: 'Test 7: Spatial & Location Continuity',
+    category: 'Spatial Geometry',
+    description: 'Actor_003 is located in location_002 (East Steam Conduit). Actor_001 is in location_001 (Subterranean Vault). Test whether they suddenly talk face-to-face without a transit event.',
+    setupSummary: 'Two actors are in separate disconnected locations.',
+    prompt: 'Describe what happens as the clock strikes the half hour.',
+    requestedDistance: 'BEAT',
+    constraints: {
+      isolatedActorId: 'actor_003',
+      protectedInvariants: ['Actor_003 cannot speak directly to actor_001 without transition'],
+    },
+    nakedModelBehavior: {
+      flawName: 'Spatial Teleportation / Boundary Collapse',
+      explanation: 'Naked LLMs frequently collapse distinct character locations into a single room whenever both characters are discussed.',
+      sampleViolationOutput: 'As the chime rang, Locke turned to the Automaton across the room and shouted, "Halt where you are!" The Automaton turned and sneered.',
+    },
+    frameworkBehavior: {
+      remedyName: 'Spatial Geometry Matrix & POV Isolation',
+      explanation: 'The framework tracks entity locations in the temporal state and blocks cross-location interactions without explicit travel beats.',
+      sampleCompliantOutput: 'High above the floorboards, the muffled chime vibrated through the stone vault ceiling. In the damp silence, Locke and Mara exchanged a grim look.',
+    },
+  },
+  {
+    id: 'test_8_role_change',
+    title: 'Test 8: Role Evolution vs Stable Entity Identity',
+    category: 'Identity-Neutral Architecture',
+    description: 'Actor_003 changes from antagonist to reluctant ally. Test whether entity ID actor_003 retains all past relational memories while operating in their new role.',
+    setupSummary: 'Actor_003\'s role transitions: story: ["antagonist"] -> story: ["reluctant_ally"].',
+    prompt: 'Actor_003 encounters Locke and offers a truce to stop a greater disaster.',
+    requestedDistance: 'EXCHANGE',
+    constraints: {
+      protectedInvariants: ['Identity stability actor_003', 'Role updated in scene state'],
+    },
+    nakedModelBehavior: {
+      flawName: 'Identity Amnesia / Duplicate Character Creation',
+      explanation: 'Standard prompts often hallucinate a new character (e.g. "a new helpful stranger") because they cannot distinguish identity from role.',
+      sampleViolationOutput: 'A new friendly automaton named Unit-10 appeared and said, "Forget Unit-09, I am your friend now and will guide you."',
+    },
+    frameworkBehavior: {
+      remedyName: 'Identity-Neutral Role Mapping',
+      explanation: 'Actor_003 remains actor_003 with intact mention history, while their role attribute updates smoothly.',
+      sampleCompliantOutput: '"You seek the brass core," the hooded figure rasped from the grate opening, fingers unclasping from the heavy pry-bar. "The Mayor\'s men will flood the lower conduits in ten minutes. We have common reason to run."',
+    },
+  },
+  {
+    id: 'test_9_unnamed_actor',
+    title: 'Test 9: Unnamed Actor State Preservation',
+    category: 'Entity Resolution & Progressive Naming',
+    description: 'Actor_004 is introduced purely as "a one-eyed courier" (name: null). Several beats later, the author names them "Garrick". Test whether all prior history remains attached without duplicate entity creation.',
+    setupSummary: 'actor_004 has mentions: 3, possessions: [object_005]. Name is subsequently assigned.',
+    prompt: 'The author updates the project character sheet to name actor_004 "Garrick".',
+    requestedDistance: 'BEAT',
+    constraints: {
+      protectedInvariants: ['All 3 prior mentions and object_005 possession stay attached to actor_004'],
+    },
+    nakedModelBehavior: {
+      flawName: 'Duplicate Entity Hallucination',
+      explanation: 'Chat models treat the name "Garrick" as an entirely new person, losing track of what "the one-eyed courier" did earlier.',
+      sampleViolationOutput: 'Garrick arrived at the station with an empty bag, completely unaware of the package the one-eyed courier had dropped off earlier.',
+    },
+    frameworkBehavior: {
+      remedyName: 'Neutral Entity Resolution Engine',
+      explanation: 'Framework uses stable actor_004 as ground truth. Changing working_label to project name does not reset relational graph state.',
+      sampleCompliantOutput: 'Garrick adjusted the leather eyepatch over his scarred brow, feeling the weight of the cylinder he had concealed in his boot three blocks ago.',
+    },
+  },
+  {
+    id: 'test_10_rewrite_invariants',
+    title: 'Test 10: Rewrite Invariants & Transformation Contracts',
+    category: 'Transformation Discipline',
+    description: 'Request a rewrite of a 3-sentence action passage into "Dark Suspense & Tension". Test whether the rewrite preserves the EXACT events, chronological order, and participants with zero new lore.',
+    setupSummary: 'Source passage: Locke unlocks the door. Mara finds the empty case. They hear a noise.',
+    prompt: 'Rewrite this passage with Dark Suspense tone.',
+    requestedDistance: 'BEAT',
+    constraints: {
+      protectedInvariants: [
+        'Preserve 3 events in order: 1. Unlock door, 2. Find empty case, 3. Hear noise',
+        'Zero new actors or changed outcomes',
+      ],
+    },
+    nakedModelBehavior: {
+      flawName: 'Rewrite Hallucination & Event Corruption',
+      explanation: 'Ungoverned rewriters invent new dialogue, change the outcome (e.g. they find a severed hand or a bomb), or skip steps entirely.',
+      sampleViolationOutput: 'In the pitch blackness, Locke broke the lock with an axe. Inside, they found a cursed skull that whispered their doom as shadowy cultists surrounded the house.',
+    },
+    frameworkBehavior: {
+      remedyName: 'Transformation Contract Enforcement',
+      explanation: 'Onceaponatime contracts protect event order, participants, and outcome while permitting stylistic and sensory enrichment.',
+      sampleCompliantOutput: 'With agonizing care, Locke eased the iron key into the lock, shivering as the tumblers dropped with the sound of a guillotine. Within the gloom, Mara’s lantern beam swept across the velvet cushion—bare and stripped of its prize. Then, out of the darkness behind the brickwork, a single sharp scrape echoed.',
+    },
+  },
+];
