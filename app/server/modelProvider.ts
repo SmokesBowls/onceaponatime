@@ -1,4 +1,5 @@
 export interface GenerateTextParams {
+  operation?: string;
   systemPrompt?: string;
   userPrompt: string;
   jsonMode?: boolean;
@@ -10,7 +11,24 @@ export interface GenerateTextResult {
   text: string;
   rawOutput?: any;
   usedFallbackModel?: boolean;
-  providerName: string;
+  providerName?: string;
+  receipt?: InferenceReceipt;
+}
+
+export interface InferenceReceipt {
+  readonly broker: 'Hermes';
+  readonly requestId: string;
+  readonly operation: string;
+  readonly actualProvider: string;
+  readonly actualModel: string;
+  readonly fallbackUsed: boolean;
+  readonly fallbackIndex: number;
+  readonly routeAttemptCount: number;
+}
+
+export interface HermesGenerateTextResult extends GenerateTextResult {
+  readonly text: string;
+  readonly receipt: InferenceReceipt;
 }
 
 export interface ModelProvider {
@@ -20,6 +38,170 @@ export interface ModelProvider {
 }
 
 import { GoogleGenAI } from '@google/genai';
+
+interface HermesProviderOptions {
+  baseUrl?: string;
+  apiKey?: string;
+  fetchImpl?: typeof fetch;
+  requestIdFactory?: () => string;
+}
+
+const HERMES_REQUEST_SCHEMA = 'hermes.inference.request.v1';
+const HERMES_RESPONSE_SCHEMA = 'hermes.inference.response.v1';
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+function hasExactKeys(value: Record<string, unknown>, expected: string[]): boolean {
+  const actual = Object.keys(value).sort();
+  return actual.length === expected.length
+    && actual.every((key, index) => key === [...expected].sort()[index]);
+}
+
+function requireNonEmptyString(value: unknown, field: string): string {
+  if (typeof value !== 'string' || value.trim().length === 0) {
+    throw new Error(`Hermes receipt ${field} must be a non-empty string.`);
+  }
+  return value.trim();
+}
+
+export class HermesProvider implements ModelProvider {
+  readonly name = 'Hermes';
+  private readonly baseUrl: string;
+  private readonly apiKey: string;
+  private readonly fetchImpl: typeof fetch;
+  private readonly requestIdFactory: () => string;
+
+  constructor(options: HermesProviderOptions = {}) {
+    this.baseUrl = (options.baseUrl ?? process.env.HERMES_API_URL ?? '').replace(/\/+$/, '');
+    this.apiKey = options.apiKey ?? process.env.HERMES_API_KEY ?? '';
+    this.fetchImpl = options.fetchImpl ?? globalThis.fetch;
+    this.requestIdFactory = options.requestIdFactory ?? (() => globalThis.crypto.randomUUID());
+  }
+
+  isAvailable(): boolean {
+    return Boolean(this.baseUrl && this.apiKey && this.fetchImpl);
+  }
+
+  async generateText(params: GenerateTextParams): Promise<HermesGenerateTextResult> {
+    if (!this.isAvailable()) {
+      throw new Error('Hermes inference is unavailable because its endpoint or API key is not configured.');
+    }
+
+    const operation = requireNonEmptyString(params.operation, 'operation');
+    const requestId = requireNonEmptyString(this.requestIdFactory(), 'request_id');
+    const messages = [];
+    if (params.systemPrompt !== undefined) {
+      messages.push({ role: 'system', content: params.systemPrompt });
+    }
+    messages.push({ role: 'user', content: params.userPrompt });
+
+    const options: Record<string, unknown> = {
+      response_format: params.jsonMode ? 'json' : 'text',
+    };
+    if (typeof params.temperature === 'number') {
+      options.temperature = params.temperature;
+    }
+
+    const response = await this.fetchImpl(`${this.baseUrl}/v1/inference`, {
+      method: 'POST',
+      headers: {
+        Accept: 'application/json',
+        Authorization: `Bearer ${this.apiKey}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        schema: HERMES_REQUEST_SCHEMA,
+        request_id: requestId,
+        operation,
+        messages,
+        options,
+      }),
+    });
+
+    let body: unknown;
+    try {
+      body = await response.json();
+    } catch {
+      throw new Error(`Hermes inference returned invalid JSON (HTTP ${response.status}).`);
+    }
+
+    if (!response.ok) {
+      const error = isRecord(body) && isRecord(body.error) ? body.error : null;
+      const code = error && typeof error.code === 'string' ? ` ${error.code}` : '';
+      const message = error && typeof error.message === 'string'
+        ? `: ${error.message}`
+        : '';
+      throw new Error(`Hermes inference failed (HTTP ${response.status}${code})${message}`);
+    }
+
+    if (!isRecord(body) || !hasExactKeys(body, [
+      'schema',
+      'request_id',
+      'status',
+      'output',
+      'execution',
+    ])) {
+      throw new Error('Hermes inference response does not match the closed response envelope.');
+    }
+    if (body.schema !== HERMES_RESPONSE_SCHEMA) {
+      throw new Error('Hermes inference response schema is unsupported.');
+    }
+    if (body.request_id !== requestId) {
+      throw new Error('Hermes inference receipt request_id does not match the request.');
+    }
+    if (body.status !== 'completed') {
+      throw new Error('Hermes inference response status must be completed.');
+    }
+    if (!isRecord(body.output) || !hasExactKeys(body.output, ['text'])) {
+      throw new Error('Hermes inference output is malformed.');
+    }
+    const text = requireNonEmptyString(body.output.text, 'output.text');
+    if (!isRecord(body.execution) || !hasExactKeys(body.execution, [
+      'provider',
+      'model',
+      'fallback_used',
+      'fallback_index',
+      'attempt_count',
+    ])) {
+      throw new Error('Hermes inference execution receipt is malformed.');
+    }
+
+    const actualProvider = requireNonEmptyString(body.execution.provider, 'provider');
+    const actualModel = requireNonEmptyString(body.execution.model, 'model');
+    const fallbackUsed = body.execution.fallback_used;
+    const fallbackIndex = body.execution.fallback_index;
+    const routeAttemptCount = body.execution.attempt_count;
+    if (typeof fallbackUsed !== 'boolean') {
+      throw new Error('Hermes receipt fallback_used must be a boolean.');
+    }
+    if (!Number.isInteger(fallbackIndex) || (fallbackIndex as number) < 0) {
+      throw new Error('Hermes receipt fallback_index must be a non-negative integer.');
+    }
+    if (fallbackUsed !== ((fallbackIndex as number) > 0)) {
+      throw new Error('Hermes receipt fallback metadata is inconsistent.');
+    }
+    if (
+      !Number.isInteger(routeAttemptCount)
+      || (routeAttemptCount as number) < (fallbackIndex as number) + 1
+    ) {
+      throw new Error('Hermes receipt attempt_count is inconsistent with its route index.');
+    }
+
+    const receipt: InferenceReceipt = Object.freeze({
+      broker: 'Hermes',
+      requestId,
+      operation,
+      actualProvider,
+      actualModel,
+      fallbackUsed,
+      fallbackIndex: fallbackIndex as number,
+      routeAttemptCount: routeAttemptCount as number,
+    });
+    return Object.freeze({ text, receipt });
+  }
+}
 
 export class GeminiProvider implements ModelProvider {
   name = 'Gemini';
