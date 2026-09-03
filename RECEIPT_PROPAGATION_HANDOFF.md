@@ -1,282 +1,376 @@
-# Receipt Propagation Completion Checklist and Next-Agent Handoff
+# Receipt Propagation Status and Next-Agent Handoff
 
 Status: Active continuation plan
 
 Repository: `/mnt/data-drive/onceaponatime`
 
-> **For Hermes:** Load `test-driven-development` and `architecture-boundary-contracts` before implementation. Execute one bounded RED → GREEN slice at a time. Do not skip the observed RED failure and do not combine the stages below.
+Authoritative checkpoint: `7c99cf8fbfeaf1deb160197808ed6a34f6663425` (`feat: activate receipt-bearing Hermes Stage 2`)
 
-## Goal
+A fresh agent must treat repository HEAD as authoritative and inspect current source before editing. Do not recover implementation assumptions from older conversations or from pre-Stage-1 versions of this document.
 
-Carry the exact immutable Hermes execution receipt with every inference-derived candidate so execution metadata is never reconstructed later and no receiptless model output can enter narrative validation or promotion.
+> **For Hermes:** Load `test-driven-development` and `architecture-boundary-contracts`. Execute one bounded RED → GREEN slice at a time, observe RED before production edits, and keep RED and GREEN in separate commits.
 
-The governing chain is:
+## Governing authority chain
 
 ```text
-inference
-→ transport/receipt admission
-→ structural validation
-→ epistemic/domain validation
-→ verified candidate
+Onceaponatime-owned persistent truth
+→ Onceaponatime-built authorized context
+→ Hermes raw inference broker
+→ admitted model output + exact execution receipt
+→ Onceaponatime structural validation
+→ Onceaponatime epistemic/domain validation
+→ author review and optional edit
 → explicit acceptance/promotion
 → persistent state
 ```
 
-The next implementation slice is the additive receipt-bearing interface migration only. It must not make Hermes the default, activate the new interface in `/api/framework/execute`, add operation-aware model routing, change Stage 2 context isolation, or configure research-candidate models.
+Hermes attests execution. It does not attest narrative correctness, validation, human edits, acceptance, or canon.
 
-This boundary matters because the current active pipeline defaults to `GeminiProvider`, which cannot honestly produce a Hermes broker receipt. Requiring a Hermes receipt on that active path without changing the provider would make normal execution unusable; fabricating a Hermes receipt for Gemini would be worse. Therefore the next slice defines and proves the receipt-bearing interfaces additively. Activation and default-provider migration must be one later, separately reviewed vertical slice.
+The normative transport and authority contract is:
 
-## Normative and research inputs
+- `/mnt/data-drive/onceaponatime/HERMES_INFERENCE_CONTRACT.md`
 
-Read these before editing:
+## Current verified milestone
 
-- Normative boundary: `/mnt/data-drive/onceaponatime/HERMES_INFERENCE_CONTRACT.md`
-- Raw research trail: `/home/mytruelove/Documents/deep research perchance raw findings.md`
-- Architectural synthesis: `/home/mytruelove/Documents/deep research thoughts perchance.md`
+### Completed receipt vocabulary and provider boundary
 
-Evidence rule:
+The following are implemented in `app/src/types.ts` and `app/server/modelProvider.ts`:
 
-- Treat the stateless authority split, specialized capability policies, epistemic isolation, and benchmark separation as architectural direction.
-- Treat current model names, provider prices, context limits, availability, revisions, and latency as candidates requiring live verification.
-- Treat inferred Perchance model ancestry, quantization, hardware, runtime, and sampling values according to their stated evidence level; do not hard-code them as facts.
+- [x] One shared `InferenceReceipt` definition.
+- [x] Generic `InferenceArtifact<T>`.
+- [x] `Stage1PlanningArtifact = InferenceArtifact<BeatPlanStage1>`.
+- [x] `Stage2RenderingArtifact = InferenceArtifact<string>`.
+- [x] Production `createInferenceArtifact(value, receipt)` boundary.
+- [x] Runtime freezing of the supplied receipt and artifact wrapper.
+- [x] Exact receipt identity is retained within a runtime; receipts are not cloned or reconstructed.
+- [x] `ReceiptBearingModelProvider` is separate from transitional `ModelProvider`.
+- [x] Receipt-bearing calls require an operation label.
+- [x] `HermesGenerateTextResult` requires `{ text, receipt }`.
+- [x] `HermesProvider` satisfies the receipt-bearing interface and strictly admits the closed Hermes response envelope.
 
-## Current verified state
-
-### Onceaponatime
-
-Relevant commits:
-
-- `169450d` — raw Hermes inference authority contract
-- `be72f4e` — route-attempt receipt semantics
-- `fdcd2a5` — focused HermesProvider RED
-- `fe11aaf` — strict Hermes transport and immutable receipt admission GREEN
-
-Current implementation:
-
-- `app/server/modelProvider.ts` exports `HermesProvider`.
-- `HermesProvider` sends no provider or model selection.
-- A completed response is admitted only after strict schema, correlation, output, identity, fallback, and route-attempt validation.
-- `InferenceReceipt` and the returned `{ text, receipt }` are frozen at runtime.
-- `getModelProvider()` still returns `GeminiProvider`; this is intentional at the current checkpoint.
-- `GenerateTextParams.operation` and `GenerateTextResult.receipt` remain optional only for temporary compatibility with the legacy provider path.
-
-Fresh focused verification at this checkpoint:
-
-```text
-npm run test:hermes-provider  PASS
-npm run lint                  PASS
-npm test                      PASS
-npm run build                 PASS
-```
-
-### Hermes
-
-Relevant commits in `/home/mytruelove/.hermes/hermes-agent`:
-
-- `fbba00829` — raw broker receipt RED
-- `ca204d109` — raw broker contract core GREEN
-- `9d033d43b` — endpoint/configuration RED
-- `c26849bd3` — `POST /v1/inference` GREEN
-
-Important limitation: `operation` is currently an audit label. Hermes still resolves one global primary/fallback route and does not yet map operations to capability policies.
-
-Pre-existing state to preserve: Hermes has an unrelated modified `package-lock.json`. Do not stage, reset, clean, or commit it as part of Onceaponatime work.
-
-## Completion checklist
-
-### Completed foundation
-
-- [x] Onceaponatime/Hermes authority split is normative.
-- [x] Hermes exposes authenticated, stateless, tool-less raw inference.
-- [x] Onceaponatime can construct a closed Hermes request without selecting provider/model.
-- [x] Onceaponatime rejects malformed, mismatched, failed, or unattested Hermes responses.
-- [x] Admitted transport results and receipts are frozen at runtime.
-- [x] Transport RED and GREEN are separate commits.
-
-### Next bounded slice: additive receipt-bearing interfaces
-
-- [ ] Move the neutral wire/domain `InferenceReceipt` type from `app/server/modelProvider.ts` to `app/src/types.ts`; do not duplicate it.
-- [ ] Add generic `InferenceArtifact<T>` and specific `Stage1PlanningArtifact` / `Stage2RenderingArtifact` types in `app/src/types.ts`.
-- [ ] Add a `ReceiptBearingModelProvider` interface whose successful result requires an admitted receipt.
-- [ ] Keep legacy `ModelProvider` separate and explicitly marked transitional; do not weaken the receipt-bearing interface to accommodate Gemini.
-- [ ] Make `HermesProvider` satisfy `ReceiptBearingModelProvider` without changing `getModelProvider()`.
-- [ ] Add focused type/runtime tests in `app/tests/receiptBearingInterfaces.test.ts` before production edits.
-- [ ] Prove the artifact and receipt are frozen and the exact admitted receipt object is retained.
-- [ ] Prove receipt-bearing results cannot be represented without a receipt.
-- [ ] Do not modify `narrativePipeline.ts`, `server.ts`, `App.tsx`, or active execution behavior in this slice.
-- [ ] Run focused RED, focused GREEN, full tests, TypeScript, and build.
-- [ ] Commit RED and GREEN separately.
-
-### Later slices — do not pull these into the next GREEN
-
-- [ ] Stage 1 activation changes the active provider path and receipt propagation together; no active route is left requiring Hermes receipts from Gemini.
-- [ ] Stage 1 sends `onceaponatime.stage1.plan`, returns `Stage1PlanningArtifact`, and rejects provider failure without `generateLocalPlan(...)` output.
-- [ ] The server and client carry the Stage 1 receipt without reconstruction; the client freezes it again after HTTP deserialization.
-- [ ] Stage 1 remains candidate-only and cannot mutate Codex or persistent narrative state before validation and promotion.
-- [ ] Stage 2 returns its own `Stage2RenderingArtifact` and distinct immutable receipt.
-- [ ] Stage 2 receives only an approved, epistemically filtered scene envelope; hidden world truth is omitted rather than accompanied by a “do not reveal” instruction.
-- [ ] Candidate validation carries both Stage 1 and Stage 2 receipts without rewriting either.
-- [ ] Acceptance/promotion rejects candidates missing either required receipt.
-- [ ] Receipt identities are stored with accepted artifacts and never regenerated from configuration or logs.
-- [ ] Hermes maps operation names to capability policies, not hard-coded model names.
-- [ ] Capability policy selection remains internal to Hermes.
-- [ ] Live evaluation selects models/providers only after current availability, revision, cost, context, latency, and provenance controls are verified.
-- [ ] The normal Onceaponatime provider changes from Gemini to Hermes only after receipt-bearing Stage 1 and Stage 2 interfaces are ready.
-- [ ] Direct Gemini model selection and fallback ownership are removed from the normal path.
-- [ ] Stage 2 deterministic prose fallbacks are removed.
-- [ ] Naked benchmark fabricated-success responses are removed.
-- [ ] Mention extraction and validation failure paths are audited for receiptless/fabricated success.
-- [ ] Full benchmark separates framework obedience, literary quality, and operational performance.
-- [ ] Full verification is rerun in both repositories before push/release claims.
-
-## Next slice: exact RED → GREEN work order
-
-### Task 1: Freeze receipt-bearing interface expectations in RED
-
-Objective: Specify shared immutable artifact/provider interfaces without changing the active pipeline.
-
-Files:
-
-- Create: `app/tests/receiptBearingInterfaces.test.ts`
-- Modify: `app/package.json`
-
-RED requirements:
-
-1. Import `InferenceArtifact`, `Stage1PlanningArtifact`, `Stage2RenderingArtifact`, and `ReceiptBearingModelProvider` from their intended modules.
-2. Construct a receipt-bearing fake provider and require its successful result to contain `{ text, receipt }`.
-3. Wrap a normalized plan and prose value with the exact provider receipt; require object identity (`artifact.receipt === providerResult.receipt`) rather than reconstructed equality.
-4. Require both artifact and receipt to be frozen at runtime.
-5. Include compile-time negative assertions (using `@ts-expect-error`) showing that a receipt-bearing provider result and each inference artifact cannot omit `receipt`.
-
-Run:
-
-```bash
-cd /mnt/data-drive/onceaponatime/app
-npm run test:receipt-interfaces
-npm run lint
-```
-
-Expected RED: missing shared artifact and receipt-bearing provider exports. Fixture self-checks should otherwise be valid.
-
-Commit RED separately:
-
-```bash
-cd /mnt/data-drive/onceaponatime
-git diff --check
-git status --short
-git add app/tests/receiptBearingInterfaces.test.ts app/package.json
-git diff --cached --check
-git commit -m "test: require receipt-bearing inference interfaces"
-```
-
-### Task 2: Implement the smallest additive GREEN
-
-Objective: Establish one shared receipt vocabulary while preserving current execution behavior.
-
-Files:
-
-- Modify: `app/src/types.ts`
-- Modify: `app/server/modelProvider.ts`
-
-Required type relationships:
+Current shared shape:
 
 ```text
 InferenceReceipt
-    broker: "Hermes"
-    requestId
-    operation
-    actualProvider
-    actualModel
-    fallbackUsed
-    fallbackIndex
-    routeAttemptCount
+  readonly broker: "Hermes"
+  readonly requestId
+  readonly operation
+  readonly actualProvider
+  readonly actualModel
+  readonly fallbackUsed
+  readonly fallbackIndex
+  readonly routeAttemptCount
 
 InferenceArtifact<T>
-    value: T
-    receipt: InferenceReceipt
-
-Stage1PlanningArtifact = InferenceArtifact<BeatPlanStage1>
-Stage2RenderingArtifact = InferenceArtifact<string>
-
-ReceiptBearingModelProvider
-    generateText(...) -> Promise<HermesGenerateTextResult>
+  readonly value: T
+  readonly receipt: InferenceReceipt
 ```
 
-Rules:
+Relevant commits:
 
-- Move `InferenceReceipt`; do not copy it.
-- Keep all receipt fields readonly.
-- Keep `broker` fixed to the Hermes literal.
-- Keep `HermesGenerateTextResult.receipt` mandatory.
-- Have `HermesProvider` explicitly satisfy `ReceiptBearingModelProvider`.
-- Preserve the existing runtime `Object.freeze` behavior.
-- Do not add cost, tokens, latency, upstream trace IDs, or policy names before the HTTP contract supplies them.
-- Do not edit active pipeline/server/client files.
-- Do not change `getModelProvider()` in this slice.
+- `60ca887` — receipt-bearing interface RED
+- `551ea07` — receipt-bearing interface GREEN
 
-Focused and full verification:
+### Completed Hermes Stage 1 activation
+
+The active Stage 1 path is:
+
+```text
+authorized GenerationContext + author direction
+→ planNarrativeBeat(...)
+→ getStage1ModelProvider(): ReceiptBearingModelProvider
+→ HermesProvider
+→ operation "onceaponatime.stage1.plan"
+→ admitted { text, receipt }
+→ JSON parse + Stage 1 structural normalization
+→ createInferenceArtifact(normalizedPlan, exactReceipt)
+→ frozen Stage1PlanningArtifact
+```
+
+Completed guarantees:
+
+- [x] Stage 1 uses a dedicated Hermes selector, not transitional `getModelProvider()`.
+- [x] The exact operation is `onceaponatime.stage1.plan`.
+- [x] `planNarrativeBeat()` accepts `ReceiptBearingModelProvider` and returns `Stage1PlanningArtifact`.
+- [x] Provider unavailability, provider rejection, and malformed model JSON terminate Stage 1.
+- [x] The inference-failure route cannot produce deterministic plausible planning output.
+- [x] Repository-wide search established no legitimate non-inference use for `generateLocalPlan()`; it was deleted.
+- [x] Stage 1 normalization remains structural and forces `knowledge_verified` and `reveals_protected` to `false`.
+- [x] Stage 1 tests prove `artifact.receipt === providerResult.receipt`, runtime freezing, context immutability, and rejection of transitional `ModelProvider`.
+
+Relevant commits:
+
+- `e058820` — Stage 1 activation RED
+- `19d2403` — Stage 1 activation GREEN
+
+### Completed Hermes Stage 2 activation
+
+The active Stage 2 path is:
+
+```text
+approved Stage 1 plan + current authorized GenerationContext
+→ renderNarrativeProse(...)
+→ getStage2ModelProvider(): ReceiptBearingModelProvider
+→ HermesProvider
+→ operation "onceaponatime.stage2.render"
+→ admitted { text, receipt }
+→ non-empty prose admission at the stage boundary
+→ createInferenceArtifact(exactText, exactReceipt)
+→ frozen Stage2RenderingArtifact
+```
+
+Completed guarantees:
+
+- [x] Stage 2 uses a dedicated Hermes selector, not transitional `getModelProvider()`.
+- [x] The exact operation is `onceaponatime.stage2.render`.
+- [x] `renderNarrativeProse()` accepts `ReceiptBearingModelProvider` and returns `Stage2RenderingArtifact`.
+- [x] The artifact value is the exact admitted non-empty prose; Stage 2 does not trim or rewrite it.
+- [x] Provider unavailability, provider rejection, missing output, and empty/whitespace output terminate Stage 2.
+- [x] The inference-failure route cannot produce deterministic plausible prose.
+- [x] Repository-wide search established no legitimate non-inference use for `generateLocalProse()`; it was deleted.
+- [x] Stage 1 and Stage 2 receipts remain distinct objects with distinct request IDs and operation labels when produced by separate inference calls.
+- [x] Tests prove exact receipt identity within the server runtime, runtime freezing, fail-closed behavior, and rejection of transitional `ModelProvider`.
+
+Relevant commits:
+
+- `32f8b91` — Stage 2 activation RED
+- `7c99cf8` — Stage 2 activation GREEN
+
+## Active execution and receipt propagation
+
+`POST /api/framework/execute` currently performs:
+
+```text
+compileGenerationContext(...)
+→ Stage1PlanningArtifact
+→ stage1Plan = stage1Artifact.value
+→ Stage2RenderingArtifact
+→ stage2Prose = stage2Artifact.value
+→ compileValidationContext(...)
+→ validateCandidateProse(stage2Artifact.value, validationContext, stage1Plan)
+→ return complete Stage 1 and Stage 2 artifacts
+```
+
+Initial validation therefore consumes the original Stage 2 inference text through `stage2Artifact.value`. A successful Stage 2 render is not itself validation or canon.
+
+The response returns:
+
+```text
+stage1: Stage1PlanningArtifact
+stage2: Stage2RenderingArtifact
+validation: ValidationReport
+contextPackage: GenerationContext
+```
+
+### HTTP and browser immutability boundary
+
+HTTP serialization necessarily breaks object identity across server and browser runtimes. The browser does not claim cross-process identity.
+
+`app/src/App.tsx` reconstructs runtime immutability for each received artifact with `createInferenceArtifact(...)`, passing the exact deserialized receipt object instead of rebuilding its fields:
+
+```text
+received Stage 1 value + received Stage 1 receipt
+→ browser-frozen Stage1PlanningArtifact
+
+received Stage 2 value + received Stage 2 receipt
+→ browser-frozen Stage2RenderingArtifact
+```
+
+Within the browser runtime, the reconstructed artifact retains the exact received receipt object.
+
+### Immutable generated prose versus editable review prose
+
+`CandidateGeneration` currently carries:
+
+```text
+stage1Artifact: Stage1PlanningArtifact
+stage2Artifact: Stage2RenderingArtifact
+stage2Prose: string
+```
+
+`createCandidateGeneration(...)` initializes:
+
+```text
+candidate.stage2Prose = candidate.stage2Artifact.value
+```
+
+`stage2Artifact` is immutable inference provenance for the original admitted model output. `stage2Prose` is the separate editable review and promotion copy.
+
+`editCandidateStage2Prose(...)` changes only `stage2Prose` and preserves the exact Stage 2 artifact and receipt references. Post-edit revalidation and promotion operate on `stage2Prose`; the Stage 2 receipt must never be described as attesting human-edited prose.
+
+## Current transitional Gemini uses
+
+`getModelProvider()` still returns `GeminiProvider`. This is intentional and remains separate from the dedicated Hermes Stage 1 and Stage 2 selectors.
+
+Current uses of the transitional general provider are:
+
+- `/api/health` general-provider reporting.
+- `validateCandidateProse()` model-assisted validation.
+- `extractMentionsAndState()` model-assisted extraction.
+- `/api/benchmark/naked-execute` naked benchmark inference.
+
+Additional transitional behavior remains:
+
+- Gemini owns its direct model candidate/fallback list inside `GeminiProvider`.
+- Validator model failure falls back to an explicitly unverified deterministic report.
+- Extraction model failure falls back to deterministic extraction.
+- Naked benchmark unavailability or failure still produces fabricated illustrative prose. This must be removed in a later bounded slice; it is not acceptable as truthful inference success.
+- Hermes operation labels are still audit labels. Hermes does not yet map operations to capability policies.
+
+Do not confuse the general health-provider result with the active Stage 1 and Stage 2 provider selections. Both active narrative inference stages now use dedicated Hermes selectors.
+
+## Current epistemic boundary
+
+`compileGenerationContext()` already performs substantial epistemic filtering, including:
+
+- POV-known facts rather than unrestricted world truth;
+- POV-filtered entity identities and neutral unknown-entity labels;
+- default-deny thread visibility;
+- reveal lockbox behavior;
+- POV-authorized recent prose;
+- bounded Codex entities and continuity constraints.
+
+This means the next slice is not justified by a known secret leak.
+
+However, Stage 2 currently receives the same broad `GenerationContext` used by Stage 1. `renderNarrativeProse()` also serializes it under the literal prompt heading:
+
+```text
+FULL AUTHORIZED GENERATION CONTEXT:
+${JSON.stringify(generationContext, null, 2)}
+```
+
+The context is authorized, but it is broader than the rendering worker needs. “Epistemically safe” and “appropriately scoped to Stage 2” are different properties.
+
+## Next bounded slice: Stage 2 epistemically filtered rendering envelope / context narrowing
+
+Target architecture:
+
+```text
+broad authorized planning GenerationContext
+→ Stage 1 planning
+→ approved Stage 1 plan
+→ Onceaponatime compiles a smaller Stage 2 rendering envelope
+→ Stage 2 rendering
+```
+
+The next slice should establish a purpose-specific, typed rendering envelope compiled by Onceaponatime from the approved Stage 1 plan and already-authorized generation context. Stage 2 should receive only information needed to render that approved plan faithfully.
+
+Before implementation, inspect at least:
+
+- `app/server/contextCompiler.ts`
+- `app/server/narrativePipeline.ts`
+- `app/server.ts`
+- `app/src/types.ts`
+- `app/tests/epistemicContextCompiler.test.ts`
+- `app/tests/stage1HermesActivation.test.ts`
+- `app/tests/stage2HermesActivation.test.ts`
+- `app/tests/codexProgressiveMemory.test.ts`
+
+Required direction for the slice:
+
+- RED first; commit RED and GREEN separately.
+- Define the rendering-envelope contract before changing Stage 2 prompts.
+- Keep the broad authorized `GenerationContext` for Stage 1.
+- Compile the rendering envelope inside Onceaponatime after Stage 1 approval.
+- Preserve only approved-plan requirements and authorized sensory, spatial, continuity, style/rewrite, and recent-prose material needed for rendering.
+- Prove excluded broad planning fields are absent from the Stage 2 provider prompt.
+- Prove required rendering facts and continuity constraints remain present.
+- Remove the full `GenerationContext` serialization from the Stage 2 prompt.
+- Preserve `onceaponatime.stage2.render`, exact Stage 2 receipt propagation, fail-closed rendering, and the immutable-artifact/editable-review-copy split.
+- Do not narrow the validator’s governing `ValidationContext`; validation remains independently authoritative and may require information the renderer must not receive.
+- Stop rather than invent a schema if the approved plan cannot identify which authorized facts/entities the renderer needs.
+
+The next slice must not be combined with capability routing, provider selection, validator/extraction migration, promotion gating, or persistence changes.
+
+## Non-blocking review follow-ups
+
+The independent Stage 2 review passed with no security or logic errors and identified two useful follow-up proofs:
+
+- [ ] Add HTTP integration coverage for the `/api/framework/execute` Stage 2 artifact round-trip, including server response shape, validation input, and browser-side re-freezing.
+- [ ] Add explicit proof that Stage 2 rendering does not mutate its input `GenerationContext`.
+
+These may be included only when they fit naturally within a bounded test slice; they are not permission to broaden unrelated production changes.
+
+## Future milestones — preserve as separate slices
+
+- [ ] Validation carries both Stage 1 and Stage 2 provenance without rewriting either receipt.
+- [ ] Promotion rejects candidates missing required Stage 1 or Stage 2 provenance.
+- [ ] Accepted artifacts retain receipt identities durably; receipts are never regenerated from configuration or logs.
+- [ ] Hermes maps operation names to capability policies while keeping provider/model selection internal to Hermes.
+- [ ] Validator inference migrates away from transitional Gemini.
+- [ ] Extraction inference migrates away from transitional Gemini.
+- [ ] Benchmark inference migrates away from transitional Gemini where appropriate.
+- [ ] Fabricated naked-benchmark success output is removed and failures are reported truthfully.
+- [ ] Live model/provider evaluation occurs only after architecture, capability policy, provenance, and benchmark boundaries are ready.
+- [ ] Current model names, prices, limits, revisions, availability, latency, and provider controls are verified live before configuration claims.
+
+Keep these distinctions explicit:
+
+```text
+Stage 1 receipt = planning inference provenance
+Stage 2 receipt = original rendering inference provenance
+validation       = separate narrative authority
+human edit       = separate transformation
+promotion        = separate authority
+persistent state = separate durable record
+```
+
+## Current tests and verification commands
+
+Focused tests:
+
+```text
+app/tests/hermesProvider.test.ts
+app/tests/receiptBearingInterfaces.test.ts
+app/tests/stage1HermesActivation.test.ts
+app/tests/stage2HermesActivation.test.ts
+app/tests/failClosedProvider.test.ts
+app/tests/epistemicContextCompiler.test.ts
+app/tests/validationVerification.test.ts
+app/tests/codexProgressiveMemory.test.ts
+```
+
+Run from `/mnt/data-drive/onceaponatime/app`:
 
 ```bash
-cd /mnt/data-drive/onceaponatime/app
-npm run test:receipt-interfaces
 npm run test:hermes-provider
+npm run test:receipt-interfaces
+npm run test:stage1-hermes
+npm run test:stage2-hermes
+npm run test:fail-closed
+npx tsx tests/epistemicContextCompiler.test.ts
+npx tsx tests/validationVerification.test.ts
 npm run lint
 npm test
 npm run build
 ```
 
-Commit GREEN separately:
+Then run from the repository root:
 
 ```bash
-cd /mnt/data-drive/onceaponatime
 git diff --check
-git status --short
-git add app/src/types.ts app/server/modelProvider.ts
-git diff --cached --check
-git commit -m "refactor: add receipt-bearing inference interfaces"
+git status --short --branch --untracked-files=all
 ```
 
-Do not stage unrelated files or use `git add .`.
+The canonical `npm test` script includes HermesProvider, Stage 1, Stage 2, fail-closed, epistemic-context, validation, and progressive-memory tests. `test:receipt-interfaces` remains a separate focused command and must be run explicitly when receipt interfaces or artifact construction change.
 
-### Following activation slice (plan only; do not execute now)
+## Stop conditions and red lines
 
-After reviewing the additive interface milestone, activate Stage 1 in a separate vertical RED → GREEN slice. That later slice must change the active provider path and Stage 1 receipt propagation together so `/api/framework/execute` is never left dependent on receiptless Gemini while requiring a Hermes receipt.
+Stop and report rather than widening a slice if:
 
-## Stop conditions
+- the change would require modifying the Hermes HTTP schema;
+- a receipt would need to be synthesized, copied, or reconstructed;
+- Stage 2 context narrowing would weaken or reuse the independent validation context;
+- required rendering data cannot be selected without new narrative-authority rules;
+- a passing test would require restoring deterministic inference fallback prose or plans;
+- context narrowing would change Stage 1 authorization or activate unrelated Gemini migrations;
+- promotion or persistence redesign becomes necessary to complete the rendering-envelope boundary.
 
-Stop and report instead of widening the patch if:
+Never:
 
-- Stage 1 receipt propagation requires changing the Hermes HTTP schema.
-- Existing client candidate acceptance cannot carry a receipt without redesigning persistence.
-- Tests reveal that plan normalization reconstructs or mutates receipt data.
-- A passing test would require making receipt optional on the new Stage 1 artifact.
-- The only way to keep tests passing is to retain receiptless local planning as model success.
-- The work begins to include Stage 2 filtering, capability routing, model configuration, benchmarks, or default-provider migration.
-
-## Red lines for the next agent
-
-- Do not treat structurally valid Stage 1 JSON as verified narrative truth.
-- Do not persist Stage 1 state merely because JSON parsing succeeded.
-- Do not synthesize a receipt for Gemini or any receiptless provider.
-- Do not infer actual provider/model from configuration.
-- Do not turn operation labels into model selectors.
-- Do not expose model/provider choice to Onceaponatime.
-- Do not send hidden world facts to Stage 2 in this slice.
-- Do not modify Hermes `package-lock.json`.
-- Do not push unless the user explicitly asks; the user intends to perform the push for this checkpoint.
-
-## Completion report template
-
-The next agent’s report should state:
-
-- RED commit and exact expected failure;
-- GREEN commit;
-- files changed;
-- exact shared receipt, generic artifact, and receipt-bearing provider shapes;
-- proof that artifact/provider types cannot omit a receipt;
-- proof that the admitted receipt and result remain frozen;
-- confirmation that active planning, rendering, server, and client behavior was not changed;
-- focused/full test, lint, and build results;
-- remaining Stage 2/default-provider/operation-policy work;
-- current Git status;
-- explicit confirmation that no model/provider configuration and no push occurred.
+- infer the actual provider/model from configuration;
+- treat an operation label as a model selector inside Onceaponatime;
+- expose provider/model selection to Onceaponatime callers;
+- treat valid model output as verified or canonical;
+- claim a Stage 2 receipt attests later human edits;
+- push unless the user explicitly asks.
