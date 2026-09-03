@@ -1,5 +1,6 @@
 import {
   GenerationContext,
+  Stage2RenderingEnvelope,
   ValidationContext,
   BeatPlanStage1,
   ValidationReport,
@@ -152,20 +153,20 @@ function validateAndNormalizePlan(
  * STAGE 2: Prose Renderer
  *
  * Input:
- * - the SAME authorized GenerationContext
+ * - a rendering-only envelope compiled from authorized GenerationContext
  * - the APPROVED Stage 1 Beat Plan
  * - recent authorized prose
  *
  * Output: Immutable rendering artifact containing prose and inference provenance.
  */
 export async function renderNarrativeProse(
-  generationContext: GenerationContext,
+  renderingEnvelope: Stage2RenderingEnvelope,
   approvedPlan: BeatPlanStage1,
   provider: ReceiptBearingModelProvider = getStage2ModelProvider()
 ): Promise<Stage2RenderingArtifact> {
-  const povActor = generationContext.activePovActor;
+  const pov = renderingEnvelope.pov;
   const distance = approvedPlan.distance_budget;
-  const op = generationContext.operatingMode;
+  const op = renderingEnvelope.operatingMode;
 
   const systemPrompt = `You are the Stage 2 Prose Renderer of Onceaponatime.
 Your sole responsibility is to render the approved Stage 1 Beat Plan into literary prose.
@@ -179,27 +180,40 @@ STRICT RENDERING DIRECTIVES:
    - EXCHANGE: 2-4 lines of dialogue with gestures.
    - SEQUENCE: 1-2 rich paragraphs.
    - SCENE: A full scene passage.
-4. POV RESTRICTION: Maintain close perspective of ${povActor.identity.name || povActor.identity.working_label}.
+4. POV RESTRICTION: Maintain close perspective of ${pov.displayName}.
 5. REWRITE PRESERVATION: If rewrite contract is present, follow modify/preserve/forbid constraints strictly.
 6. PHYSICAL & SPATIAL CONTINUITY: Respect all continuity constraints strictly. If an object is resting or held by another character, do NOT narrate the POV actor holding or carrying it unless an explicit pickup beat was planned.
-7. ACCUMULATED CODEX & AUTHORIZED STORY REALITY: Use the authorized narrative memory (accumulated claims, observed characteristics, reliability scores, and physical states). Describe uncorroborated or provisional elements with observational restraint matching their reliability.`;
+7. ACCUMULATED CODEX & AUTHORIZED STORY REALITY: Use only the scoped identities, classifications, reliability scores, relationships, and physical-state references supplied below. Describe provisional elements with observational restraint matching their reliability.`;
 
   // Format rich Codex entities for prose rendering
-  const codexFormatted = (generationContext.accumulatedCodexEntities || []).map((ent) => {
-    const supported = (ent.supported_claims || []).map((c) => `    - [verified] ${c}`);
-    const contradicted = (ent.contradicted_claims || []).map((c) => `    - [CONTRADICTED] ${c}`);
-    const allClaims = [...supported, ...contradicted].join('\n');
+  const codexFormatted = renderingEnvelope.codexEntities.map((ent) => {
     const rels = (ent.relationships || []).map((r) => `    - ${r}`).join('\n');
-    return `* [${ent.id}] "${ent.label}" (${ent.type}, ${ent.classification_confidence}, ${Math.round(ent.reliability * 100)}% reliability)
-  Holder: ${ent.current_holder_id ? `held by ${ent.current_holder_id}` : 'unheld / resting'} | Location: ${ent.current_location_id || 'local'}
-  Evidence count: ${ent.distinct_evidence_count} beats
-  Claims:\n${allClaims || '    - None recorded'}${rels ? `\n  Relationships:\n${rels}` : ''}`;
+    const holder = ent.currentHolderStatus === 'approved'
+      ? `held by ${ent.currentHolderId}`
+      : ent.currentHolderStatus === 'absent' ? 'unheld / resting' : 'holder outside approved scope';
+    const location = ent.currentLocationStatus === 'approved'
+      ? ent.currentLocationId
+      : ent.currentLocationStatus === 'absent' ? 'unknown' : 'outside approved scope';
+    return `* [${ent.id}] "${ent.displayName}" (${ent.type}, ${ent.classificationConfidence}, ${Math.round(ent.reliability * 100)}% reliability)
+  Holder: ${holder} | Location: ${location}${rels ? `\n  Relationships:\n${rels}` : ''}`;
   }).join('\n\n');
 
   // Format continuity constraints
-  const continuityFormatted = (generationContext.continuityConstraints || []).length > 0
-    ? generationContext.continuityConstraints.map((c) => `- ${c}`).join('\n')
+  const continuityFormatted = renderingEnvelope.continuityConstraints.length > 0
+    ? renderingEnvelope.continuityConstraints.map((constraint) => {
+        if (constraint.holderStatus === 'approved') {
+          return `- [INVENTORY CONTINUITY] "${constraint.entityDisplayName}" (${constraint.entityId}) is carried by ${constraint.holderDisplayName || constraint.holderId}.`;
+        }
+        if (constraint.holderStatus === 'outside_approved_scope') {
+          return `- [INVENTORY CONTINUITY] "${constraint.entityDisplayName}" (${constraint.entityId}) is carried by someone outside approved scope.`;
+        }
+        return `- [INVENTORY CONTINUITY] "${constraint.entityDisplayName}" (${constraint.entityId}) is unheld / resting (current_holder_id: null).`;
+      }).join('\n')
     : 'None (standard physical continuity applies)';
+
+  const rewriteContractFormatted = renderingEnvelope.rewriteContract
+    ? JSON.stringify(renderingEnvelope.rewriteContract, null, 2)
+    : 'None';
 
   const userPrompt = `TASK: Render Prose for ${op}
 
@@ -212,22 +226,30 @@ ${continuityFormatted}
 ACCUMULATED STORY CODEX (AUTHORIZED NARRATIVE REALITY):
 ${codexFormatted || 'No accumulated codex entities in scope.'}
 
-AUTHORIZED GENERATION CONTEXT SUMMARY:
-- Active POV: ${povActor.identity.name || povActor.identity.working_label} (${povActor.id})
-- Current Location: ${generationContext.currentLocation?.working_label || generationContext.currentLocation?.name || 'Local area'}
-- Present Entities: ${generationContext.presentEntities.map((e) => `${e.label} (${e.id})`).join(', ') || 'None'}
-- Relevant Possessions: ${generationContext.relevantPossessions.map((p) => `${p.label} (held by ${p.holderName || 'nobody'})`).join(', ') || 'None'}
-- Known Facts: ${(generationContext.knownFacts || []).map((f) => `"${f.statement}"`).join('; ') || 'None'}
-- Sincere Beliefs: ${(generationContext.sincereBeliefs || []).join('; ') || 'None'}
-- Permitted Foreshadowing Cues: ${(generationContext.permittedForeshadowingCues || []).join('; ') || 'None'}
-- Relevant Open Threads: ${(generationContext.relevantOpenThreads || []).map((t) => `${t.label} (${t.id})`).join('; ') || 'None'}
+AUTHORIZED RENDERING EVIDENCE:
+- Active POV: ${pov.displayName} (${pov.id})
+- POV Traits: ${JSON.stringify(pov.traits)}
+- POV Current State: ${JSON.stringify(pov.currentState)}
+- Current Location: ${renderingEnvelope.currentLocation
+  ? `${renderingEnvelope.currentLocation.displayName} (${renderingEnvelope.currentLocation.id}): ${renderingEnvelope.currentLocation.description}`
+  : 'Local area'}
+- Involved Entities: ${renderingEnvelope.involvedEntities.map((e) => `${e.displayName} (${e.id})`).join(', ') || 'None'}
+- Relevant Possessions: ${renderingEnvelope.relevantPossessions.map((p) => {
+  const holder = p.holderStatus === 'approved'
+    ? p.holderDisplayName || p.holderId
+    : p.holderStatus === 'absent' ? 'nobody' : 'someone outside approved scope';
+  return `${p.displayName} (held by ${holder})`;
+}).join(', ') || 'None'}
+- Known Facts: ${renderingEnvelope.knownFacts.map((f) => `"${f.statement}"`).join('; ') || 'None'}
+- Sincere Beliefs: ${renderingEnvelope.sincereBeliefs.join('; ') || 'None'}
+- Permitted Foreshadowing Cues: ${renderingEnvelope.permittedForeshadowingCues.join('; ') || 'None'}
 
-FULL AUTHORIZED GENERATION CONTEXT:
-${JSON.stringify(generationContext, null, 2)}
+REWRITE CONTRACT:
+${rewriteContractFormatted}
 
 RECENT MANUSCRIPT PROSE:
 """
-${generationContext.recentProse || '(Opening of manuscript)'}
+${renderingEnvelope.recentProse || '(Opening of manuscript)'}
 """
 
 OUTPUT:

@@ -23,6 +23,11 @@ const sentinels = {
   unrelatedCodex: 'UNRELATED_CODEX_SENTINEL',
   unrelatedPossession: 'UNRELATED_POSSESSION_SENTINEL',
   unrelatedContinuity: 'UNRELATED_CONTINUITY_SENTINEL',
+  collidingContinuity: 'COLLIDING_SCOPE_CONSTRAINT_SENTINEL',
+  unrelatedHolderId: 'actor-unrelated-holder',
+  unrelatedHolderName: 'UNRELATED_HOLDER_NAME_SENTINEL',
+  unrelatedCodexLocation: 'UNRELATED_CODEX_LOCATION_SENTINEL',
+  unrelatedCodexClaim: 'UNRELATED_CODEX_CLAIM_SENTINEL',
   storyPosition: 'PLANNING_STORY_POSITION_SENTINEL',
   approvedEntity: 'APPROVED_ENTITY_SENTINEL',
   approvedCodex: 'APPROVED_CODEX_SENTINEL',
@@ -122,8 +127,8 @@ const generationContext: GenerationContext = {
     {
       id: 'object-approved',
       label: sentinels.approvedPossession,
-      holderId: null,
-      holderName: null,
+      holderId: sentinels.unrelatedHolderId,
+      holderName: sentinels.unrelatedHolderName,
     },
     {
       id: 'object-unrelated',
@@ -169,10 +174,25 @@ const generationContext: GenerationContext = {
       contradicted_claims: [],
       relationships: [],
     },
+    {
+      id: 'object-approved',
+      label: sentinels.approvedPossession,
+      type: 'object',
+      classification_confidence: 'resolved',
+      reliability: 0.7,
+      salience: 0.8,
+      distinct_evidence_count: 2,
+      current_holder_id: sentinels.unrelatedHolderId,
+      current_location_id: sentinels.unrelatedCodexLocation,
+      supported_claims: [sentinels.unrelatedCodexClaim],
+      contradicted_claims: [sentinels.unrelatedCodexClaim],
+      relationships: ['carried_by -> actor-unrelated-holder'],
+    },
   ],
   continuityConstraints: [
     `[INVENTORY CONTINUITY] object-approved ${sentinels.approvedContinuity}`,
     `[INVENTORY CONTINUITY] object-unrelated ${sentinels.unrelatedContinuity}`,
+    `[INVENTORY CONTINUITY] object-approved-shadow ${sentinels.collidingContinuity}`,
   ],
   rewriteContract: {
     presetName: sentinels.rewrite,
@@ -247,6 +267,24 @@ async function testCompilerConstructsNarrowEnvelopeWithoutMutatingAuthorizedCont
   assert.equal('storyPosition' in envelope, false);
   assert.equal('relevantOpenThreads' in envelope, false);
   assert.equal('active_goals' in envelope, false);
+  const approvedPossession = envelope.relevantPossessions.find(({ id }) => id === 'object-approved');
+  assert.equal(approvedPossession?.holderStatus, 'outside_approved_scope');
+  assert.equal(approvedPossession?.holderId, null);
+  assert.equal(approvedPossession?.holderDisplayName, null);
+  const approvedObjectCodex = envelope.codexEntities.find(({ id }) => id === 'object-approved');
+  assert.equal(approvedObjectCodex?.currentHolderStatus, 'outside_approved_scope');
+  assert.equal(approvedObjectCodex?.currentHolderId, null);
+  assert.equal(approvedObjectCodex?.currentLocationStatus, 'outside_approved_scope');
+  assert.equal(approvedObjectCodex?.currentLocationId, null);
+  assert.deepEqual(approvedObjectCodex?.relationships, []);
+  assert.deepEqual(envelope.continuityConstraints, [{
+    kind: 'inventory',
+    entityId: 'object-approved',
+    entityDisplayName: sentinels.approvedPossession,
+    holderId: null,
+    holderDisplayName: null,
+    holderStatus: 'outside_approved_scope',
+  }]);
 
   for (const excluded of [
     sentinels.plannerGoal,
@@ -254,7 +292,13 @@ async function testCompilerConstructsNarrowEnvelopeWithoutMutatingAuthorizedCont
     sentinels.unrelatedEntity,
     sentinels.unrelatedCodex,
     sentinels.unrelatedPossession,
+    sentinels.approvedContinuity,
     sentinels.unrelatedContinuity,
+    sentinels.collidingContinuity,
+    sentinels.unrelatedHolderId,
+    sentinels.unrelatedHolderName,
+    sentinels.unrelatedCodexLocation,
+    sentinels.unrelatedCodexClaim,
     sentinels.storyPosition,
     'UNRELATED_CONNECTED_LOCATION_SENTINEL',
     'FACT_PROVENANCE_SENTINEL',
@@ -268,13 +312,13 @@ async function testCompilerConstructsNarrowEnvelopeWithoutMutatingAuthorizedCont
     sentinels.approvedEntity,
     sentinels.approvedCodex,
     sentinels.approvedPossession,
-    sentinels.approvedContinuity,
     sentinels.knownFact,
     sentinels.belief,
     sentinels.location,
     sentinels.recentProse,
     sentinels.foreshadowing,
     sentinels.rewrite,
+    'notices -> actor-pov',
   ]) {
     assert.equal(serializedEnvelope.includes(retained), true, `envelope retained ${retained}`);
   }
@@ -307,7 +351,13 @@ async function testStage2RequestContainsOnlyEnvelopeEvidenceAndMutatesNoInput() 
     sentinels.unrelatedEntity,
     sentinels.unrelatedCodex,
     sentinels.unrelatedPossession,
+    sentinels.approvedContinuity,
     sentinels.unrelatedContinuity,
+    sentinels.collidingContinuity,
+    sentinels.unrelatedHolderId,
+    sentinels.unrelatedHolderName,
+    sentinels.unrelatedCodexLocation,
+    sentinels.unrelatedCodexClaim,
     sentinels.storyPosition,
   ]) {
     assert.equal(modelRequest.includes(excluded), false, `request excluded ${excluded}`);
@@ -317,10 +367,14 @@ async function testStage2RequestContainsOnlyEnvelopeEvidenceAndMutatesNoInput() 
     sentinels.approvedEntity,
     sentinels.approvedCodex,
     sentinels.approvedPossession,
-    sentinels.approvedContinuity,
     sentinels.knownFact,
+    sentinels.belief,
     sentinels.location,
     sentinels.recentProse,
+    sentinels.foreshadowing,
+    sentinels.rewrite,
+    'notices -> actor-pov',
+    'someone outside approved scope',
   ]) {
     assert.equal(modelRequest.includes(retained), true, `request retained ${retained}`);
   }

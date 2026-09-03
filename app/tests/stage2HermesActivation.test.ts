@@ -1,5 +1,8 @@
 import assert from 'node:assert/strict';
-import { compileGenerationContext } from '../server/contextCompiler';
+import {
+  compileGenerationContext,
+  compileStage2RenderingEnvelope,
+} from '../server/contextCompiler';
 import { planNarrativeBeat, renderNarrativeProse } from '../server/narrativePipeline';
 import {
   getStage2ModelProvider,
@@ -40,6 +43,7 @@ const approvedPlan: BeatPlanStage1 = {
   distance_budget: generationContext.narrativeDistance,
   plan_notes: 'Approved Stage 1 plan.',
 };
+const renderingEnvelope = compileStage2RenderingEnvelope(generationContext, approvedPlan);
 
 function admittedReceipt(
   operation: 'onceaponatime.stage1.plan' | 'onceaponatime.stage2.render',
@@ -80,7 +84,7 @@ function assertCompileTimeStage2Boundary() {
   };
 
   // @ts-expect-error Stage 2 requires a receipt-bearing provider, not transitional ModelProvider.
-  void renderNarrativeProse(generationContext, approvedPlan, legacyProvider);
+  void renderNarrativeProse(renderingEnvelope, approvedPlan, legacyProvider);
 
   const stage1Receipt = admittedReceipt('onceaponatime.stage1.plan', 'stage1-compile-time');
   const stage1Artifact = Object.freeze({ value: approvedPlan, receipt: stage1Receipt });
@@ -115,7 +119,7 @@ async function testStage2UsesHermesOperationAndReturnsExactImmutableArtifact() {
     return Object.freeze({ text: admittedProse, receipt });
   });
 
-  const artifact = await renderNarrativeProse(generationContext, approvedPlan, provider);
+  const artifact = await renderNarrativeProse(renderingEnvelope, approvedPlan, provider);
 
   assert.deepEqual(operations, ['onceaponatime.stage2.render']);
   assert.equal(artifact.value, admittedProse);
@@ -135,7 +139,7 @@ async function testUnavailableProviderFailsBeforeInference() {
   }, false);
 
   await assert.rejects(
-    () => renderNarrativeProse(generationContext, approvedPlan, provider),
+    () => renderNarrativeProse(renderingEnvelope, approvedPlan, provider),
     /model provider.*unavailable/i,
   );
   assert.equal(generateCalls, 0);
@@ -147,7 +151,7 @@ async function testProviderRejectionFailsClosedWithoutLocalProse() {
   });
 
   await assert.rejects(
-    () => renderNarrativeProse(generationContext, approvedPlan, provider),
+    () => renderNarrativeProse(renderingEnvelope, approvedPlan, provider),
     /broker rejected Stage 2 inference/i,
   );
 }
@@ -158,11 +162,11 @@ async function testEmptyOrMalformedProviderOutputFailsClosed() {
   const malformedProvider = providerReturning(async () => ({ receipt } as HermesGenerateTextResult));
 
   await assert.rejects(
-    () => renderNarrativeProse(generationContext, approvedPlan, emptyProvider),
+    () => renderNarrativeProse(renderingEnvelope, approvedPlan, emptyProvider),
     /stage 2.*non-empty|stage 2.*malformed/i,
   );
   await assert.rejects(
-    () => renderNarrativeProse(generationContext, approvedPlan, malformedProvider),
+    () => renderNarrativeProse(renderingEnvelope, approvedPlan, malformedProvider),
     /stage 2.*non-empty|stage 2.*malformed/i,
   );
 }
@@ -180,7 +184,8 @@ async function testStageReceiptsRemainDistinct() {
   }));
 
   const stage1Artifact = await planNarrativeBeat(generationContext, 'Cross the threshold.', stage1Provider);
-  const stage2Artifact = await renderNarrativeProse(generationContext, stage1Artifact.value, stage2Provider);
+  const stage2Envelope = compileStage2RenderingEnvelope(generationContext, stage1Artifact.value);
+  const stage2Artifact = await renderNarrativeProse(stage2Envelope, stage1Artifact.value, stage2Provider);
 
   assert.notEqual(stage1Artifact.receipt, stage2Artifact.receipt);
   assert.equal(stage1Artifact.receipt.operation, 'onceaponatime.stage1.plan');
@@ -194,7 +199,7 @@ async function testEditableReviewCopyCannotRewriteInferenceProvenance() {
   const stage2Receipt = admittedReceipt('onceaponatime.stage2.render', 'candidate-stage2');
   const stage1Artifact = Object.freeze({ value: approvedPlan, receipt: stage1Receipt });
   const stage2Artifact = await renderNarrativeProse(
-    generationContext,
+    renderingEnvelope,
     approvedPlan,
     providerReturning(async () => Object.freeze({
       text: 'Original admitted inference prose.',

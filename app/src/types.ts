@@ -409,6 +409,77 @@ export interface GenerationContext {
   rewriteContract: RewriteContract | null;
 }
 
+export type Stage2ScopedReferenceStatus = 'approved' | 'outside_approved_scope' | 'absent';
+
+export interface Stage2RenderingEntity {
+  id: string;
+  type: 'actor' | 'location' | 'object';
+  displayName: string;
+}
+
+export interface Stage2RenderingPossession {
+  id: string;
+  displayName: string;
+  holderId: string | null;
+  holderDisplayName: string | null;
+  holderStatus: Stage2ScopedReferenceStatus;
+}
+
+export interface Stage2RenderingCodexEvidence {
+  id: string;
+  displayName: string;
+  type: string;
+  classificationConfidence: string;
+  reliability: number;
+  currentHolderId: string | null;
+  currentHolderStatus: Stage2ScopedReferenceStatus;
+  currentLocationId: string | null;
+  currentLocationStatus: Stage2ScopedReferenceStatus;
+  relationships: string[];
+}
+
+export interface Stage2RenderingContinuityConstraint {
+  kind: 'inventory';
+  entityId: string;
+  entityDisplayName: string;
+  holderId: string | null;
+  holderDisplayName: string | null;
+  holderStatus: Stage2ScopedReferenceStatus;
+}
+
+export interface Stage2RenderingEnvelope {
+  operatingMode: OperatingMode;
+  pov: {
+    id: string;
+    displayName: string;
+    traits: Record<string, number | string>;
+    currentState: {
+      fatigue: number;
+      fear: number;
+      certainty: number;
+      emotion: string;
+    };
+  };
+  currentLocation: {
+    id: string;
+    displayName: string;
+    description: string;
+  } | null;
+  involvedEntities: Stage2RenderingEntity[];
+  relevantPossessions: Stage2RenderingPossession[];
+  knownFacts: Array<{
+    id: string;
+    statement: string;
+    status: string;
+  }>;
+  sincereBeliefs: string[];
+  recentProse: string;
+  codexEntities: Stage2RenderingCodexEvidence[];
+  continuityConstraints: Stage2RenderingContinuityConstraint[];
+  rewriteContract: RewriteContract | null;
+  permittedForeshadowingCues: string[];
+}
+
 export interface ValidationContext {
   povActorId: string;
   povActorLabel: string;

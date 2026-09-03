@@ -5,6 +5,8 @@ import {
   NarrativeDistance,
   RewriteContract,
   GenerationContext,
+  Stage2RenderingEnvelope,
+  BeatPlanStage1,
   ValidationContext,
   KnowledgeBoundaries,
 } from '../src/types';
@@ -518,6 +520,127 @@ export function compileGenerationContext(
     accumulatedCodexEntities,
     continuityConstraints,
     rewriteContract: operation === 'TRANSFORMATION' ? rewriteContract : null,
+  };
+}
+
+/**
+ * Compile the rendering-only evidence Stage 2 needs from already-authorized
+ * generation context. This boundary must never regain access to StoryProject.
+ */
+export function compileStage2RenderingEnvelope(
+  generationContext: GenerationContext,
+  approvedPlan: BeatPlanStage1
+): Stage2RenderingEnvelope {
+  const approvedEntityIds = new Set([
+    generationContext.activePovActor.id,
+    approvedPlan.primary_actor_id,
+    ...(approvedPlan.permitted_entities_involved || []),
+  ]);
+
+  const involvedEntities = generationContext.presentEntities
+    .filter((entity) => approvedEntityIds.has(entity.id))
+    .map((entity) => ({
+      id: entity.id,
+      type: entity.type,
+      displayName: entity.label,
+    }));
+
+  const relevantPossessions = generationContext.relevantPossessions
+    .filter((possession) => approvedEntityIds.has(possession.id))
+    .map((possession) => {
+      const holderIsApproved = possession.holderId !== null
+        && approvedEntityIds.has(possession.holderId);
+      return {
+        id: possession.id,
+        displayName: possession.label,
+        holderId: holderIsApproved ? possession.holderId : null,
+        holderDisplayName: holderIsApproved ? possession.holderName : null,
+        holderStatus: possession.holderId === null
+          ? 'absent' as const
+          : holderIsApproved ? 'approved' as const : 'outside_approved_scope' as const,
+      };
+    });
+
+  const codexEntities = (generationContext.accumulatedCodexEntities || [])
+    .filter((entity) => approvedEntityIds.has(entity.id))
+    .map((entity) => {
+      const holderIsApproved = entity.current_holder_id !== null
+        && approvedEntityIds.has(entity.current_holder_id);
+      const allowedLocationIds = new Set([
+        ...approvedEntityIds,
+        ...(generationContext.currentLocation ? [generationContext.currentLocation.id] : []),
+      ]);
+      const locationIsApproved = entity.current_location_id !== null
+        && allowedLocationIds.has(entity.current_location_id);
+
+      return {
+        id: entity.id,
+        displayName: entity.label,
+        type: entity.type,
+        classificationConfidence: entity.classification_confidence,
+        reliability: entity.reliability,
+        currentHolderId: holderIsApproved ? entity.current_holder_id : null,
+        currentHolderStatus: entity.current_holder_id === null
+          ? 'absent' as const
+          : holderIsApproved ? 'approved' as const : 'outside_approved_scope' as const,
+        currentLocationId: locationIsApproved ? entity.current_location_id : null,
+        currentLocationStatus: entity.current_location_id === null
+          ? 'absent' as const
+          : locationIsApproved ? 'approved' as const : 'outside_approved_scope' as const,
+        relationships: entity.relationships.filter((relationship) => {
+          const [, targetId] = relationship.split(' -> ');
+          return Boolean(targetId && approvedEntityIds.has(targetId));
+        }),
+      };
+    });
+
+  const continuityConstraints = relevantPossessions.map((possession) => ({
+    kind: 'inventory' as const,
+    entityId: possession.id,
+    entityDisplayName: possession.displayName,
+    holderId: possession.holderId,
+    holderDisplayName: possession.holderDisplayName,
+    holderStatus: possession.holderStatus,
+  }));
+
+  return {
+    operatingMode: generationContext.operatingMode,
+    pov: {
+      id: generationContext.activePovActor.id,
+      displayName: generationContext.activePovActor.identity.name
+        || generationContext.activePovActor.identity.working_label
+        || generationContext.activePovActor.id,
+      traits: { ...generationContext.activePovActor.traits },
+      currentState: { ...generationContext.activePovActor.current_state },
+    },
+    currentLocation: generationContext.currentLocation
+      ? {
+          id: generationContext.currentLocation.id,
+          displayName: generationContext.currentLocation.name
+            || generationContext.currentLocation.working_label,
+          description: generationContext.currentLocation.description_summary,
+        }
+      : null,
+    involvedEntities,
+    relevantPossessions,
+    knownFacts: generationContext.knownFacts.map((fact) => ({
+      id: fact.id,
+      statement: fact.statement,
+      status: fact.status,
+    })),
+    sincereBeliefs: [...generationContext.sincereBeliefs],
+    recentProse: generationContext.recentProse,
+    codexEntities,
+    continuityConstraints,
+    rewriteContract: generationContext.rewriteContract
+      ? {
+          presetName: generationContext.rewriteContract.presetName,
+          modify: [...generationContext.rewriteContract.modify],
+          preserve: [...generationContext.rewriteContract.preserve],
+          forbid: [...generationContext.rewriteContract.forbid],
+        }
+      : null,
+    permittedForeshadowingCues: [...generationContext.permittedForeshadowingCues],
   };
 }
 

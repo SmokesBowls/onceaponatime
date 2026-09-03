@@ -7,7 +7,10 @@ import {
   mergeClaims,
   synthesizeCodex,
 } from '../src/lib/codexEngine';
-import { compileGenerationContext } from '../server/contextCompiler';
+import {
+  compileGenerationContext,
+  compileStage2RenderingEnvelope,
+} from '../server/contextCompiler';
 import { StoryProject, CodexEntity } from '../src/types';
 
 function assert(condition: boolean, message: string) {
@@ -217,9 +220,9 @@ export async function runCodexTests() {
   assert(hasInventoryConstraint, 'Continuity constraint explicitly prevents false holding of resting object');
 
   // -------------------------------------------------------------
-  // TEST 7: Stage 2 Prose Renderer Prompt Delivery Verification
+  // TEST 7: Stage 2 Prose Renderer Approved Memory Delivery
   // -------------------------------------------------------------
-  console.log('\n--- TEST 7: Stage 2 Prose Renderer Full Memory Delivery ---');
+  console.log('\n--- TEST 7: Stage 2 Prose Renderer Approved Memory Delivery ---');
   let capturedStage2UserPrompt = '';
   let capturedStage2SystemPrompt = '';
 
@@ -259,7 +262,8 @@ export async function runCodexTests() {
   };
 
   const { renderNarrativeProse } = await import('../server/narrativePipeline');
-  await renderNarrativeProse(genContext, dummyPlan, mockProvider);
+  const renderingEnvelope = compileStage2RenderingEnvelope(genContext, dummyPlan);
+  await renderNarrativeProse(renderingEnvelope, dummyPlan, mockProvider);
 
   assert(capturedStage2UserPrompt.includes('ACCUMULATED STORY CODEX (AUTHORIZED NARRATIVE REALITY)'), 'Stage 2 user prompt contains ACCUMULATED STORY CODEX section');
   assert(capturedStage2UserPrompt.includes('CONTINUITY & INVENTORY CONSTRAINTS'), 'Stage 2 user prompt contains CONTINUITY & INVENTORY CONSTRAINTS section');

@@ -2,7 +2,11 @@ import express from 'express';
 import path from 'path';
 import { createServer as createViteServer } from 'vite';
 import dotenv from 'dotenv';
-import { compileGenerationContext, compileValidationContext } from './server/contextCompiler';
+import {
+  compileGenerationContext,
+  compileStage2RenderingEnvelope,
+  compileValidationContext,
+} from './server/contextCompiler';
 import {
   planNarrativeBeat,
   renderNarrativeProse,
@@ -88,11 +92,14 @@ app.post('/api/framework/execute', async (req, res) => {
     const stage1Artifact = await planNarrativeBeat(generationContext, authorPrompt);
     const stage1Plan = stage1Artifact.value;
 
-    // STEP 3: Stage 2 Prose Renderer (Renders prose faithful to the approved plan)
-    const stage2Artifact = await renderNarrativeProse(generationContext, stage1Plan);
+    // STEP 3: Compile only the authorized evidence needed to render the approved plan
+    const stage2Envelope = compileStage2RenderingEnvelope(generationContext, stage1Plan);
+
+    // STEP 4: Stage 2 Prose Renderer (Renders prose faithful to the approved plan)
+    const stage2Artifact = await renderNarrativeProse(stage2Envelope, stage1Plan);
     const stage2Prose = stage2Artifact.value;
 
-    // STEP 4: Build Validation Context (Separated from generation; contains governing state)
+    // STEP 5: Build Validation Context (Separated from generation; contains governing state)
     const validationContext = compileValidationContext(
       project,
       povActorId,
@@ -100,7 +107,7 @@ app.post('/api/framework/execute', async (req, res) => {
       rewriteContract
     );
 
-    // STEP 5: Candidate Validation (Evaluates candidate prose against epistemic & distance rules)
+    // STEP 6: Candidate Validation (Evaluates candidate prose against epistemic & distance rules)
     const validationReport = await validateCandidateProse(
       stage2Prose,
       validationContext,
