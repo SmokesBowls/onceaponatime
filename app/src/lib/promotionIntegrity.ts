@@ -39,40 +39,48 @@ function isString(value: unknown): value is string {
   return typeof value === 'string';
 }
 
-function isNullableString(value: unknown): value is string | null {
-  return value === null || isString(value);
+function isNonBlankString(value: unknown): value is string {
+  return isString(value) && value.trim().length > 0;
 }
 
 function isStringArray(value: unknown): value is string[] {
   return Array.isArray(value) && value.every(isString);
 }
 
-function isMention(value: unknown): value is MentionRecord {
+function isNonBlankStringArray(value: unknown): value is string[] {
+  return Array.isArray(value) && value.every(isNonBlankString);
+}
+
+export function isPromotionMentionRecord(value: unknown): value is MentionRecord {
   if (!isRecord(value)) return false;
-  return isString(value.id)
-    && isString(value.entity_id)
-    && isString(value.passage_text)
-    && isString(value.scene_id)
-    && typeof value.beat_index === 'number'
-    && isString(value.timestamp_label)
+  return isNonBlankString(value.id)
+    && isNonBlankString(value.entity_id)
+    && isNonBlankString(value.passage_text)
+    && isNonBlankString(value.scene_id)
+    && Number.isInteger(value.beat_index)
+    && Number(value.beat_index) >= 0
+    && isNonBlankString(value.timestamp_label)
     && typeof value.confidence === 'number'
+    && Number.isFinite(value.confidence)
+    && value.confidence >= 0
+    && value.confidence <= 1
     && isStringArray(value.evidence_notes)
     && Array.isArray(value.extracted_relationships)
     && value.extracted_relationships.every((relationship) => (
       isRecord(relationship)
       && ['located_at', 'possessed_by', 'known_by', 'used_during'].includes(String(relationship.type))
-      && isString(relationship.target_id)
+      && isNonBlankString(relationship.target_id)
     ));
 }
 
-function isProposedEntity(value: unknown): value is PromotionProposedEntity {
+export function isPromotionProposedEntityRecord(value: unknown): value is PromotionProposedEntity {
   if (!isRecord(value)) return false;
-  return isString(value.id)
+  return isNonBlankString(value.id)
     && ['actor', 'object', 'location'].includes(String(value.type))
-    && isString(value.working_label)
-    && isNullableString(value.name)
-    && isStringArray(value.aliases)
-    && (value.initial_location_id === undefined || isString(value.initial_location_id));
+    && isNonBlankString(value.working_label)
+    && (value.name === null || isNonBlankString(value.name))
+    && isNonBlankStringArray(value.aliases)
+    && (value.initial_location_id === undefined || isNonBlankString(value.initial_location_id));
 }
 
 function hasValidStateChanges(value: unknown): value is PromotionStateChanges {
@@ -80,40 +88,41 @@ function hasValidStateChanges(value: unknown): value is PromotionStateChanges {
   return Array.isArray(value.location_changes)
     && value.location_changes.every((change) => (
       isRecord(change)
-      && isString(change.entity_id)
-      && isString(change.from_location_id)
-      && isString(change.to_location_id)
+      && isNonBlankString(change.entity_id)
+      && isNonBlankString(change.from_location_id)
+      && isNonBlankString(change.to_location_id)
     ))
     && Array.isArray(value.possession_changes)
     && value.possession_changes.every((change) => (
       isRecord(change)
-      && isString(change.object_id)
-      && isNullableString(change.from_actor_id)
-      && isNullableString(change.to_actor_id)
+      && isNonBlankString(change.object_id)
+      && (change.from_actor_id === null || isNonBlankString(change.from_actor_id))
+      && (change.to_actor_id === null || isNonBlankString(change.to_actor_id))
     ))
     && Array.isArray(value.actor_state_changes)
     && value.actor_state_changes.every((change) => (
       isRecord(change)
-      && isString(change.actor_id)
-      && (change.fatigue_delta === undefined || typeof change.fatigue_delta === 'number')
-      && (change.emotion === undefined || isString(change.emotion))
+      && isNonBlankString(change.actor_id)
+      && (change.fatigue_delta === undefined
+        || (typeof change.fatigue_delta === 'number' && Number.isFinite(change.fatigue_delta)))
+      && (change.emotion === undefined || isNonBlankString(change.emotion))
     ))
     && Array.isArray(value.belief_changes)
     && value.belief_changes.every((change) => (
       isRecord(change)
-      && isString(change.actor_id)
-      && isString(change.new_belief)
+      && isNonBlankString(change.actor_id)
+      && isNonBlankString(change.new_belief)
     ))
     && Array.isArray(value.thread_advancements)
     && value.thread_advancements.every((change) => (
       isRecord(change)
-      && isString(change.thread_id)
-      && isString(change.notes)
+      && isNonBlankString(change.thread_id)
+      && isNonBlankString(change.notes)
     ))
     && Array.isArray(value.reveals_triggered)
     && value.reveals_triggered.every((change) => (
       isRecord(change)
-      && isString(change.reveal_id)
+      && isNonBlankString(change.reveal_id)
       && ['foreshadowed', 'unlocked'].includes(String(change.new_status))
     ));
 }
@@ -143,9 +152,9 @@ export async function readPromotionExtractionResponse(
 
   if (
     !Array.isArray(payload.mentions)
-    || !payload.mentions.every(isMention)
+    || !payload.mentions.every(isPromotionMentionRecord)
     || !Array.isArray(payload.proposedNewEntities)
-    || !payload.proposedNewEntities.every(isProposedEntity)
+    || !payload.proposedNewEntities.every(isPromotionProposedEntityRecord)
     || !hasValidStateChanges(payload.stateChanges)
   ) {
     throw new Error('Malformed mention extraction response: incomplete extraction payload');

@@ -168,6 +168,18 @@ function testBuilderIsPureStableAndBindsExactEditableProse() {
   assert.equal(first.entries.every((entry) => entry.decision === 'pending'), true);
   assert.equal(entriesOfKind(first, 'entity_proposal').length, 1);
   assert.deepEqual(entriesOfKind(first, 'entity_proposal')[0].evidence, [mention('object_manifest_new')]);
+
+  const differentExtraction = buildPromotionManifest(project, candidate, extraction({
+    stateChanges: {
+      ...emptyStateChanges(),
+      belief_changes: [{ actor_id: project.activePovActorId, new_belief: 'different machine proposal' }],
+    },
+  }));
+  assert.notEqual(
+    first.id,
+    differentExtraction.id,
+    'different machine proposals for the same editable prose require distinct stable manifest identities',
+  );
 }
 
 function testReceiptIdentityCannotSubstituteForEditableProseFreshness() {
@@ -316,6 +328,93 @@ function testUnknownMentionCannotEnterCanon() {
   assert.throws(() => preparePromotion(project, candidate, manifest), /mention|entity|referential/i);
 }
 
+function testRejectedNewEntityCannotAliasAnExistingEntityIdentity() {
+  const project = cloneProject();
+  const candidate = candidateFor(project);
+  const existingObjectId = project.objects[0].id;
+  const manifest = decideFirstKind(
+    buildPromotionManifest(project, candidate, extraction({
+      mentions: [mention(existingObjectId, 'mention_colliding_proposal')],
+      proposedNewEntities: [newObject(existingObjectId)],
+    })),
+    'entity_proposal',
+    'rejected',
+  );
+
+  assert.throws(
+    () => preparePromotion(project, candidate, manifest),
+    /duplicate entity|identity/i,
+    'a rejected new-entity proposal cannot alias an existing entity and leak its mention into canon',
+  );
+}
+
+function testEditedEntityIdentityCannotCaptureRejectedProposalEvidence() {
+  const project = cloneProject();
+  const candidate = candidateFor(project);
+  const first = newObject('object_manifest_first');
+  const second = newObject('object_manifest_second');
+  let manifest = buildPromotionManifest(project, candidate, extraction({
+    mentions: [mention(first.id), mention(second.id)],
+    proposedNewEntities: [first, second],
+  }));
+  const firstEntry = entriesOfKind(manifest, 'entity_proposal')[0];
+  const secondEntry = entriesOfKind(manifest, 'entity_proposal')[1];
+  assert.ok(firstEntry && secondEntry);
+
+  manifest = decidePromotionManifestEntry(manifest, firstEntry.id, 'edited', {
+    ...first,
+    id: second.id,
+  });
+  manifest = decidePromotionManifestEntry(manifest, secondEntry.id, 'rejected');
+
+  assert.throws(
+    () => preparePromotion(project, candidate, manifest),
+    /duplicate entity|identity/i,
+    'an edited entity identity cannot capture evidence belonging to a rejected proposal',
+  );
+}
+
+function testMalformedCanonicalIdentitiesAndMentionNumbersFailClosed() {
+  const project = cloneProject();
+  const candidate = candidateFor(project);
+  const blankEntityManifest = buildPromotionManifest(project, candidate, extraction({
+    proposedNewEntities: [{
+      id: '   ',
+      type: 'object',
+      working_label: '   ',
+      name: null,
+      aliases: [],
+    }],
+  }));
+  assert.throws(
+    () => preparePromotion(project, candidate, blankEntityManifest),
+    /malformed|identity|blank/i,
+  );
+
+  const malformedMention = mention(project.activePovActorId, '');
+  malformedMention.beat_index = 1.5;
+  malformedMention.confidence = 999;
+  const malformedMentionManifest = buildPromotionManifest(project, candidate, extraction({
+    mentions: [malformedMention],
+  }));
+  assert.throws(
+    () => preparePromotion(project, candidate, malformedMentionManifest),
+    /malformed|mention|confidence|beat/i,
+  );
+
+  const noOpActorStateManifest = decideAllSupported(buildPromotionManifest(project, candidate, extraction({
+    stateChanges: {
+      ...emptyStateChanges(),
+      actor_state_changes: [{ actor_id: project.activePovActorId }],
+    },
+  })));
+  assert.throws(
+    () => preparePromotion(project, candidate, noOpActorStateManifest),
+    /malformed|actor-state|state change/i,
+    'an actor-state entry with no proposed change cannot be receipted as applied',
+  );
+}
+
 function testMentionAloneDoesNotProducePossessionAndExplicitPossessionChecksPriorHolder() {
   const project = cloneProject();
   const candidate = candidateFor(project);
@@ -435,6 +534,35 @@ function testAtomicFailureHistoryReceiptAndDeterminism() {
   assert.equal(first.nextProject.currentPosition.beat, project.currentPosition.beat + 1);
   assert.equal(first.promotionReceipt.boundReviewProse, candidate.stage2Prose);
   assert.equal(first.promotionReceipt.manifestId, validManifest.id);
+
+  assert.throws(
+    () => preparePromotion(first.nextProject, candidate, validManifest),
+    /already|replay|promoted/i,
+    'the same source manifest cannot promote the same prose into canon twice',
+  );
+}
+
+function testAdmissionOutcomeHasAStableDistinctTransactionIdentity() {
+  const project = cloneProject();
+  const candidate = candidateFor(project);
+  const pending = buildPromotionManifest(project, candidate, extraction({
+    stateChanges: {
+      ...emptyStateChanges(),
+      belief_changes: [{ actor_id: project.activePovActorId, new_belief: 'outcome identity belief' }],
+    },
+  }));
+  const approved = decideFirstKind(pending, 'belief_change', 'approved');
+  const rejected = decideFirstKind(pending, 'belief_change', 'rejected');
+  const approvedResult = preparePromotion(project, candidate, approved);
+  const rejectedResult = preparePromotion(project, candidate, rejected);
+
+  assert.notEqual(approvedResult.promotionReceipt.id, rejectedResult.promotionReceipt.id);
+  assert.notEqual(approvedResult.historyReceipt.operation_id, rejectedResult.historyReceipt.operation_id);
+  assert.deepEqual(
+    preparePromotion(project, candidate, approved),
+    approvedResult,
+    'the same source, decisions, and target project produce a stable transaction identity',
+  );
 }
 
 function run() {
@@ -445,9 +573,13 @@ function run() {
   testEditedDecisionRequiresSeparateAdmittedValue();
   testEntityAdmissionMentionIntegrityAndNeutralPossession();
   testUnknownMentionCannotEnterCanon();
+  testRejectedNewEntityCannotAliasAnExistingEntityIdentity();
+  testEditedEntityIdentityCannotCaptureRejectedProposalEvidence();
+  testMalformedCanonicalIdentitiesAndMentionNumbersFailClosed();
   testMentionAloneDoesNotProducePossessionAndExplicitPossessionChecksPriorHolder();
   testUnsupportedCategoriesAreHonestAndCannotApply();
   testAtomicFailureHistoryReceiptAndDeterminism();
+  testAdmissionOutcomeHasAStableDistinctTransactionIdentity();
   console.log('promotion manifest authority regression passed');
 }
 
