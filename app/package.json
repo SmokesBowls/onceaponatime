@@ -14,6 +14,7 @@
     "test:receipt-interfaces": "tsx tests/receiptBearingInterfaces.test.ts",
     "test:stage1-hermes": "tsx tests/stage1HermesActivation.test.ts",
     "test:stage2-hermes": "tsx tests/stage2HermesActivation.test.ts",
+    "test:stage2-envelope": "tsx tests/stage2RenderingEnvelope.test.ts",
     "test:fail-closed": "tsx tests/failClosedProvider.test.ts"
   },
   "dependencies": {
