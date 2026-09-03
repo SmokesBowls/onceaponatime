@@ -109,12 +109,21 @@ function testMentionedObjectsStartUnheldUntilExplicitPossessionAdmission() {
   assert.equal(object.current_holder_id, null, 'entity creation and empty changes cannot invent possession');
   assert.deepEqual(descriptions, []);
 
-  applyAdmittedPossessionChanges([object], [{
+  const promotionDraft = structuredClone(object);
+  applyAdmittedPossessionChanges([promotionDraft], [{
     object_id: object.id,
     from_actor_id: null,
     to_actor_id: 'actor-pov',
   }], descriptions);
-  assert.equal(object.current_holder_id, 'actor-pov', 'an explicit admitted possession change may establish a holder');
+  assert.equal(promotionDraft.current_holder_id, 'actor-pov', 'an explicit admitted possession change may establish a holder');
+  assert.equal(object.current_holder_id, null, 'applying possession to a promotion draft does not mutate pre-promotion state');
+
+  assert.throws(() => applyAdmittedPossessionChanges([promotionDraft], [{
+    object_id: object.id,
+    from_actor_id: null,
+    to_actor_id: 'actor-other',
+  }], descriptions), /precondition/i, 'a stale or fabricated from-holder cannot be admitted');
+  assert.equal(promotionDraft.current_holder_id, 'actor-pov');
 }
 
 async function testExtractionFailuresAreNotSuccessfulEmptyExtractions() {
@@ -150,6 +159,35 @@ async function testExtractionFailuresAreNotSuccessfulEmptyExtractions() {
     readPromotionExtractionResponse(responseStub({
       ok: true,
       payload: { success: true, mentions: [], proposedNewEntities: [] },
+    })),
+    /malformed/i,
+  );
+
+  await assert.rejects(
+    readPromotionExtractionResponse(responseStub({
+      ok: true,
+      payload: {
+        success: true,
+        mentions: [null],
+        proposedNewEntities: [],
+        stateChanges: emptyStateChanges,
+      },
+    })),
+    /malformed/i,
+  );
+
+  await assert.rejects(
+    readPromotionExtractionResponse(responseStub({
+      ok: true,
+      payload: {
+        success: true,
+        mentions: [],
+        proposedNewEntities: [],
+        stateChanges: {
+          ...emptyStateChanges,
+          possession_changes: [{ object_id: 42, to_actor_id: 'actor-pov' }],
+        },
+      },
     })),
     /malformed/i,
   );

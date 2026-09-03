@@ -663,9 +663,7 @@ OUTPUT SCHEMA:
     stateChanges: {
       location_changes: [],
       possession_changes: [],
-      actor_state_changes: [
-        { actor_id: povActorId, fatigue_delta: 0.05, emotion: 'observant and deliberate' },
-      ],
+      actor_state_changes: [],
       belief_changes: [],
       thread_advancements: [],
       reveals_triggered: [],

@@ -14,7 +14,6 @@ import {
   OperatingMode,
   NarrativeDistance,
   RewriteContract,
-  MentionRecord,
   HistoryReceipt,
   RevealEntity,
   FactEntity,
@@ -22,6 +21,12 @@ import {
   createCandidateGeneration,
   editCandidateStage2Prose,
 } from './types';
+import {
+  applyAdmittedPossessionChanges,
+  createMentionedObject,
+  readPromotionExtractionResponse,
+  restorePromotionSnapshot,
+} from './lib/promotionIntegrity';
 
 export default function App() {
   const [projects, setProjects] = useState<StoryProject[]>(DEFAULT_PROJECTS);
@@ -258,24 +263,18 @@ export default function App() {
         }),
       });
 
-      const extractionData = await extractionRes.json();
-      const extractedMentions: MentionRecord[] = extractionData.mentions || [];
-      const stateChanges = extractionData.stateChanges || {
-        location_changes: [],
-        possession_changes: [],
-        actor_state_changes: [],
-        belief_changes: [],
-        thread_advancements: [],
-        reveals_triggered: [],
-      };
+      const extractionData = await readPromotionExtractionResponse(extractionRes);
+      const extractedMentions = extractionData.mentions;
+      const stateChanges = extractionData.stateChanges;
 
       // 2. Compute state transformations
-      const updatedActors = [...activeProject.actors];
-      const updatedObjects = [...activeProject.objects];
-      const updatedLocations = [...activeProject.locations];
-      const updatedThreads = [...activeProject.threads];
-      const updatedReveals = [...activeProject.reveals];
-      const updatedKnowledge = JSON.parse(JSON.stringify(activeProject.knowledge));
+      const promotionDraft: StoryProject = JSON.parse(JSON.stringify(activeProject));
+      const updatedActors = promotionDraft.actors;
+      const updatedObjects = promotionDraft.objects;
+      const updatedLocations = promotionDraft.locations;
+      const updatedThreads = promotionDraft.threads;
+      const updatedReveals = promotionDraft.reveals;
+      const updatedKnowledge = promotionDraft.knowledge;
 
       // Handle proposed new entities
       if (Array.isArray(extractionData.proposedNewEntities)) {
@@ -297,19 +296,10 @@ export default function App() {
               isPresent: true,
             });
           } else if (newEnt.type === 'object' && !updatedObjects.some((o) => o.id === newEnt.id)) {
-            updatedObjects.push({
-              id: newEnt.id,
-              identity: {
-                name: newEnt.name || null,
-                working_label: newEnt.working_label || 'discovered object',
-                aliases: newEnt.aliases || [],
-              },
-              current_holder_id: activeProject.activePovActorId,
-              current_location_id: activeProject.currentPosition.location_id,
-              status: 'intact',
-              salience: 0.6,
-              isPresent: true,
-            });
+            updatedObjects.push(createMentionedObject(
+              newEnt,
+              activeProject.currentPosition.location_id,
+            ));
           }
         }
       }
@@ -326,13 +316,11 @@ export default function App() {
       }
 
       // Apply possession changes
-      for (const posChange of stateChanges.possession_changes || []) {
-        const obj = updatedObjects.find((o) => o.id === posChange.object_id);
-        if (obj) {
-          obj.current_holder_id = posChange.to_actor_id;
-          appliedChangeDescriptions.push(`Possession of ${obj.identity.name || obj.id} transferred to ${posChange.to_actor_id || 'unheld'}`);
-        }
-      }
+      applyAdmittedPossessionChanges(
+        updatedObjects,
+        stateChanges.possession_changes,
+        appliedChangeDescriptions,
+      );
 
       // Apply actor state updates (fatigue, emotion)
       for (const stChange of stateChanges.actor_state_changes || []) {
@@ -456,7 +444,7 @@ export default function App() {
     } catch (err) {
       console.error('[Transactional Promotion Failed]', err);
       // Restore pre-promotion snapshot
-      setProjects((prev) => prev.map((p) => (p.id === activeProjectId ? preSnapshot : p)));
+      setProjects((prev) => restorePromotionSnapshot(prev, activeProjectId, preSnapshot));
     }
   };
 
