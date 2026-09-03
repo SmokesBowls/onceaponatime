@@ -89,7 +89,8 @@ app.post('/api/framework/execute', async (req, res) => {
     const stage1Plan = stage1Artifact.value;
 
     // STEP 3: Stage 2 Prose Renderer (Renders prose faithful to the approved plan)
-    const stage2Prose = await renderNarrativeProse(generationContext, stage1Plan);
+    const stage2Artifact = await renderNarrativeProse(generationContext, stage1Plan);
+    const stage2Prose = stage2Artifact.value;
 
     // STEP 4: Build Validation Context (Separated from generation; contains governing state)
     const validationContext = compileValidationContext(
@@ -110,7 +111,7 @@ app.post('/api/framework/execute', async (req, res) => {
       success: true,
       contextPackage: generationContext,
       stage1: stage1Artifact,
-      stage2Prose,
+      stage2: stage2Artifact,
       validation: validationReport,
     });
   } catch (err: any) {

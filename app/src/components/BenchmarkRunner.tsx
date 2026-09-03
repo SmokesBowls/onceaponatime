@@ -157,7 +157,7 @@ export const BenchmarkRunner: React.FC = () => {
         ...prev,
         [test.id]: {
           nakedRun: nakedData.prose,
-          frameworkProse: frameworkData.stage2Prose,
+          frameworkProse: frameworkData.stage2?.value,
           frameworkPlan: frameworkData.stage1,
           validationReport: frameworkData.validation,
           status: isPassed ? 'passed' : 'failed',

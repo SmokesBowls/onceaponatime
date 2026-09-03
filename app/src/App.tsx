@@ -19,6 +19,8 @@ import {
   RevealEntity,
   FactEntity,
   createInferenceArtifact,
+  createCandidateGeneration,
+  editCandidateStage2Prose,
 } from './types';
 
 export default function App() {
@@ -163,16 +165,17 @@ export default function App() {
       }
 
       const stage1Artifact = createInferenceArtifact(data.stage1.value, data.stage1.receipt);
+      const stage2Artifact = createInferenceArtifact(data.stage2.value, data.stage2.receipt);
 
       // Formulate candidate generation for author review
-      const newCandidate: CandidateGeneration = {
+      const newCandidate = createCandidateGeneration({
         id: `cand_${Date.now()}`,
         timestamp: Date.now(),
         operation: params.operation,
         narrativeDistance: params.narrativeDistance,
         prompt: params.authorPrompt,
         stage1Artifact,
-        stage2Prose: data.stage2Prose || 'Prose generation completed.',
+        stage2Artifact,
         validation: data.validation || {
           passed: false,
           score: 0,
@@ -189,7 +192,7 @@ export default function App() {
         },
         contextPackage: data.contextPackage,
         status: 'pending',
-      };
+      });
 
       setCandidate(newCandidate);
     } catch (err) {
@@ -463,7 +466,7 @@ export default function App() {
 
   const handleEditCandidateText = async (text: string) => {
     if (!candidate) return;
-    const updatedCandidate = { ...candidate, stage2Prose: text };
+    const updatedCandidate = editCandidateStage2Prose(candidate, text);
     setCandidate(updatedCandidate);
 
     // Re-run validation asynchronously on edit

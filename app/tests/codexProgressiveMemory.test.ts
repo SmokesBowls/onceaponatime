@@ -224,11 +224,24 @@ export async function runCodexTests() {
   let capturedStage2SystemPrompt = '';
 
   const mockProvider = {
+    name: 'receipt-bearing-stage2-memory-test-provider',
     isAvailable: () => true,
-    generateText: async (params: { systemPrompt: string; userPrompt: string }) => {
+    generateText: async (params: { operation: string; systemPrompt: string; userPrompt: string }) => {
       capturedStage2SystemPrompt = params.systemPrompt;
       capturedStage2UserPrompt = params.userPrompt;
-      return { text: 'The traveler observed the quiet well from the edge of the crossroads.' };
+      return {
+        text: 'The traveler observed the quiet well from the edge of the crossroads.',
+        receipt: Object.freeze({
+          broker: 'Hermes' as const,
+          requestId: 'stage2-memory-prompt-test',
+          operation: params.operation,
+          actualProvider: 'test-provider',
+          actualModel: 'test-model',
+          fallbackUsed: false,
+          fallbackIndex: 0,
+          routeAttemptCount: 1,
+        }),
+      };
     },
   };
 
@@ -246,7 +259,7 @@ export async function runCodexTests() {
   };
 
   const { renderNarrativeProse } = await import('../server/narrativePipeline');
-  await renderNarrativeProse(genContext, dummyPlan, mockProvider as any);
+  await renderNarrativeProse(genContext, dummyPlan, mockProvider);
 
   assert(capturedStage2UserPrompt.includes('ACCUMULATED STORY CODEX (AUTHORIZED NARRATIVE REALITY)'), 'Stage 2 user prompt contains ACCUMULATED STORY CODEX section');
   assert(capturedStage2UserPrompt.includes('CONTINUITY & INVENTORY CONSTRAINTS'), 'Stage 2 user prompt contains CONTINUITY & INVENTORY CONSTRAINTS section');

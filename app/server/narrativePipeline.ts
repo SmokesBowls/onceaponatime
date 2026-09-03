@@ -8,11 +8,13 @@ import {
   NarrativeDistance,
   MentionRecord,
   Stage1PlanningArtifact,
+  Stage2RenderingArtifact,
   createInferenceArtifact,
 } from '../src/types';
 import {
   getModelProvider,
   getStage1ModelProvider,
+  getStage2ModelProvider,
   ModelProvider,
   ReceiptBearingModelProvider,
 } from './modelProvider';
@@ -154,13 +156,13 @@ function validateAndNormalizePlan(
  * - the APPROVED Stage 1 Beat Plan
  * - recent authorized prose
  *
- * Output: Prose string adhering strictly to the Stage 1 plan.
+ * Output: Immutable rendering artifact containing prose and inference provenance.
  */
 export async function renderNarrativeProse(
   generationContext: GenerationContext,
   approvedPlan: BeatPlanStage1,
-  provider: ModelProvider = getModelProvider()
-): Promise<string> {
+  provider: ReceiptBearingModelProvider = getStage2ModelProvider()
+): Promise<Stage2RenderingArtifact> {
   const povActor = generationContext.activePovActor;
   const distance = approvedPlan.distance_budget;
   const op = generationContext.operatingMode;
@@ -232,41 +234,22 @@ OUTPUT:
 Write ONLY the high-craft narrative prose adhering strictly to the plan and authorized memory.`;
 
   if (!provider.isAvailable()) {
-    return generateLocalProse(generationContext, approvedPlan);
+    throw new Error(`Model provider "${provider.name}" is unavailable.`);
   }
 
-  try {
-    const { text } = await provider.generateText({
-      systemPrompt,
-      userPrompt,
-      jsonMode: false,
-      temperature: 0.6,
-    });
+  const { text, receipt } = await provider.generateText({
+    operation: 'onceaponatime.stage2.render',
+    systemPrompt,
+    userPrompt,
+    jsonMode: false,
+    temperature: 0.6,
+  });
 
-    return text.trim();
-  } catch (err: any) {
-    console.warn('[Stage 2 Renderer] Model failed, falling back to local renderer:', err?.message || err);
-    return generateLocalProse(generationContext, approvedPlan);
+  if (typeof text !== 'string' || text.trim().length === 0) {
+    throw new Error('Stage 2 inference output must be a non-empty prose string.');
   }
-}
 
-function generateLocalProse(ctx: GenerationContext, plan: BeatPlanStage1): string {
-  const pov = ctx.activePovActor.identity.name || ctx.activePovActor.identity.working_label || 'The investigator';
-  const location = ctx.currentLocation?.working_label || ctx.currentLocation?.name || 'the dim chamber';
-
-  if (plan.distance_budget === 'FRAGMENT') {
-    return `${pov} caught the faint scrape of brass against the stone lintel, holding still as the dust settled.`;
-  }
-  if (plan.distance_budget === 'BEAT') {
-    return `${pov} leaned closer to the workbench, fingers grazing the cool edge of the mechanism without disturbing the aligned gears. In the silence of ${location}, every ticking pendulum marked the passage of unresolved time.`;
-  }
-  if (plan.distance_budget === 'EXCHANGE') {
-    return `"Keep the lantern low," ${pov} murmured, eyes scanning the shadows along the floorboards.\n"Nothing moves past the doorway," came the whispered reassurance. "Take what time you need."`;
-  }
-  if (plan.distance_budget === 'SEQUENCE') {
-    return `${pov} moved along the perimeter of ${location}, testing the latch on each iron-bound drawer. The third compartment yielded with a muted click, revealing only empty velvet and a thin layer of copper residue. Straightening up, ${pov} listened intently to the steady hum in the conduit beyond the wall.`;
-  }
-  return `Within ${location}, the air hung dense with oil and old wood. ${pov} systematically inspected the perimeter, checking each seal against physical tampering while keeping watch over the single unlocked entryway.`;
+  return createInferenceArtifact(text, receipt);
 }
 
 /**

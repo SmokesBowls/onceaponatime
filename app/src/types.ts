@@ -469,10 +469,30 @@ export interface CandidateGeneration {
   narrativeDistance: NarrativeDistance;
   prompt: string;
   stage1Artifact: Stage1PlanningArtifact;
+  stage2Artifact: Stage2RenderingArtifact;
   stage2Prose: string;
   validation: ValidationReport;
   contextPackage: any;
   status: 'pending' | 'accepted' | 'rejected';
+}
+
+export function createCandidateGeneration(
+  candidate: Omit<CandidateGeneration, 'stage2Prose'>,
+): CandidateGeneration {
+  return {
+    ...candidate,
+    stage2Prose: candidate.stage2Artifact.value,
+  };
+}
+
+export function editCandidateStage2Prose(
+  candidate: CandidateGeneration,
+  stage2Prose: string,
+): CandidateGeneration {
+  return {
+    ...candidate,
+    stage2Prose,
+  };
 }
 
 export interface HistoryReceipt {
