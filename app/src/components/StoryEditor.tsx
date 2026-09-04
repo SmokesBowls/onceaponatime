@@ -18,6 +18,7 @@ import {
   ChevronDown,
   ChevronUp,
   Bookmark,
+  Archive,
 } from 'lucide-react';
 import {
   StoryProject,
@@ -165,6 +166,45 @@ export const StoryEditor: React.FC<StoryEditorProps> = ({
     <div className="max-w-7xl mx-auto px-4 sm:px-8 py-8 grid grid-cols-1 lg:grid-cols-12 gap-8">
       {/* Left Column: Manuscript Feed & Literary Prose (7 cols) */}
       <div className="lg:col-span-7 space-y-8">
+        {/* Author-Supplied Source Material (Manuscript Intake) */}
+        {project.sourceDocuments && project.sourceDocuments.length > 0 && (
+          <div className="bg-[#FAF8F2] border border-[#1A1A1A] rounded p-6 shadow-sm space-y-5">
+            <div className="flex flex-wrap items-baseline justify-between gap-3 border-b border-[#1A1A1A]/20 pb-4">
+              <div className="flex items-center gap-2">
+                <Archive className="h-4 w-4 text-[#1A1A1A]" />
+                <div>
+                  <span className="text-[10px] uppercase tracking-[0.3em] font-sans text-[#736B63] mb-1 block font-bold">
+                    Author-Supplied Source Material
+                  </span>
+                  <p className="text-xs text-[#5A554E] font-serif italic">
+                    Preserved exactly as entered. Not yet interpreted, structured, or
+                    converted into story state.
+                  </p>
+                </div>
+              </div>
+              <span className="text-[10px] font-sans uppercase tracking-widest text-[#5A554E] bg-[#E5E2D9] px-2.5 py-1 rounded font-bold whitespace-nowrap">
+                Authoritative / Unstructured
+              </span>
+            </div>
+
+            <div className="space-y-4">
+              {project.sourceDocuments.map((doc) => (
+                <article key={doc.id} className="bg-[#FDFCF8] border border-[#1A1A1A]/20 rounded p-5">
+                  <div className="flex flex-wrap items-center justify-between gap-2 text-xs text-[#5A554E] mb-3 border-b border-[#1A1A1A]/10 pb-2">
+                    <span className="font-serif italic text-sm text-[#1A1A1A]">{doc.label}</span>
+                    <span className="font-sans text-[10px] uppercase tracking-wider text-[#8C827A]">
+                      Imported {new Date(doc.importedAt).toLocaleString()}
+                    </span>
+                  </div>
+                  <p className="text-[#1A1A1A] text-sm sm:text-base font-serif leading-relaxed whitespace-pre-wrap">
+                    {doc.exactText}
+                  </p>
+                </article>
+              ))}
+            </div>
+          </div>
+        )}
+
         {/* Manuscript Header Banner */}
         <div className="bg-[#FAF8F2] border border-[#1A1A1A] rounded p-6 shadow-sm">
           <div className="flex flex-wrap items-baseline justify-between gap-3 border-b border-[#1A1A1A]/20 pb-4 mb-5">

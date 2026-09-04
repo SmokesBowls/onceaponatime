@@ -583,6 +583,41 @@ export interface StoryPosition {
   location_label: string;
 }
 
+/**
+ * How an AuthorSourceDocument entered the project. Only 'pasted_prose' is
+ * produced by the current Manuscript Intake baseline; 'uploaded_file' is
+ * reserved for a later slice and is not yet emitted anywhere.
+ */
+export type AuthorSourceDocumentType = 'pasted_prose' | 'uploaded_file';
+
+/**
+ * Author-supplied source material, preserved exactly as entered.
+ *
+ * Governing authority rule (see PROPOSAL.md and
+ * MANUSCRIPT_INTAKE_ENGINEERING_REPORT.md):
+ *
+ *   author-supplied prose             = authoritative source material
+ *   machine-derived actors/objects/
+ *   locations/facts/POV/beat
+ *   boundaries/relationships/
+ *   knowledge/state                   = proposals, not truth
+ *
+ * An AuthorSourceDocument is exactly the first kind. It is never split into
+ * manuscript beats, never used to infer povActorId/locationId, and never
+ * itself interpreted into actors/objects/locations/facts/knowledge -- doing
+ * so would require inventing narrative claims the author never made. It
+ * exists so unstructured, unreviewed author prose has somewhere honest to
+ * live in a StoryProject instead of being forced into fields that assert
+ * story truth (`manuscript[].povActorId`, `manuscript[].locationId`, etc).
+ */
+export interface AuthorSourceDocument {
+  readonly id: string; // e.g. "source_001"
+  readonly label: string; // author-supplied chapter/source title
+  readonly exactText: string; // preserved byte-for-byte as entered; see src/lib/manuscriptIntake.ts
+  readonly sourceType: AuthorSourceDocumentType;
+  readonly importedAt: number; // epoch ms
+}
+
 export interface StoryProject {
   id: string;
   title: string;
@@ -608,6 +643,13 @@ export interface StoryProject {
   knowledge: KnowledgeBoundaries;
   temporalHistory: TemporalSnapshot[];
   codexEntities?: CodexEntity[];
+  /**
+   * Author-authoritative imported source material. Additive and optional
+   * (following the same precedent as codexEntities above) so every existing
+   * StoryProject -- all three DEFAULT_PROJECTS -- remains valid untouched.
+   * Absent/undefined means "no imported source material", equivalent to [].
+   */
+  sourceDocuments?: AuthorSourceDocument[];
 }
 
 export interface BenchmarkTestCase {

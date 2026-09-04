@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { Header } from './components/Header';
 import { StoryEditor } from './components/StoryEditor';
+import { ManuscriptIntakeModal, type ManuscriptIntakeSubmission } from './components/ManuscriptIntakeModal';
 import { RelationalGraph } from './components/RelationalGraph';
 import { KnowledgeMatrix } from './components/KnowledgeMatrix';
 import { TemporalTimeline } from './components/TemporalTimeline';
@@ -32,6 +33,7 @@ import {
   workbenchOperationError,
   type WorkbenchOperationError,
 } from './lib/workbenchErrors';
+import { createManuscriptIntakeProject } from './lib/manuscriptIntake';
 
 export default function App() {
   const [projects, setProjects] = useState<StoryProject[]>(DEFAULT_PROJECTS);
@@ -41,6 +43,7 @@ export default function App() {
   const [isGenerating, setIsGenerating] = useState(false);
   const [historyStack, setHistoryStack] = useState<HistoryReceipt[]>([]);
   const [workbenchError, setWorkbenchError] = useState<WorkbenchOperationError | null>(null);
+  const [showIntakeModal, setShowIntakeModal] = useState(false);
 
   const activeProject = projects.find((p) => p.id === activeProjectId) || projects[0];
 
@@ -75,77 +78,35 @@ export default function App() {
     setWorkbenchError(null);
   };
 
-  // New Blank Project Creation
-  const handleNewProject = () => {
-    const newId = `proj_${Date.now()}`;
-    const newProject: StoryProject = {
-      id: newId,
-      title: 'Untitled Narrative Project',
-      description: 'A newly initialized story project with neutral entity registry.',
-      currentPosition: {
-        act: 'Act I',
-        chapter: 'Chapter 1: The Inciting Incident',
-        scene: 'Scene 1',
-        beat: 1,
-        location_id: 'location_001',
-        location_label: 'The Crossroads',
-      },
-      activePovActorId: 'actor_001',
-      manuscript: [],
-      actors: [
-        {
-          id: 'actor_001',
-          identity: {
-            name: null,
-            working_label: 'the traveler',
-            aliases: [],
-          },
-          roles: {
-            story: ['protagonist'],
-            scene: ['observer'],
-          },
-          traits: { observant: 0.8 },
-          current_state: { fatigue: 0.1, fear: 0.1, certainty: 0.5, emotion: 'curious' },
-          active_goals: ['Investigate the strange signal'],
-          current_location_id: 'location_001',
-          possessions: [],
-          isPresent: true,
-        },
-      ],
-      objects: [],
-      locations: [
-        {
-          id: 'location_001',
-          identity: {
-            name: 'The Crossroads',
-            working_label: 'the quiet crossroads',
-            aliases: [],
-          },
-          parent_location_id: null,
-          connected_locations: [],
-          description_summary: 'An open junction where ancient paths converge.',
-        },
-      ],
-      factions: [],
-      facts: [],
-      threads: [],
-      reveals: [],
-      mentions: [],
-      knowledge: {
-        world_truth: [],
-        reader_knowledge: [],
-        actor_knowledge: {
-          actor_001: { known_facts: [], beliefs: [], forbidden_knowledge: [] },
-        },
-      },
-      temporalHistory: [],
-    };
+  // New Project: opens the Author Manuscript Intake baseline (paste-or-blank).
+  // There is no other project-creation path -- see manuscriptIntake.test.ts
+  // and MANUSCRIPT_INTAKE_ENGINEERING_REPORT.md for the governing rule this
+  // replaces a prior hardcoded fake-actor/fake-location template with.
+  const handleOpenIntake = () => {
+    setShowIntakeModal(true);
+  };
+
+  const handleCancelIntake = () => {
+    setShowIntakeModal(false);
+  };
+
+  const handleSubmitIntake = (submission: ManuscriptIntakeSubmission) => {
+    const now = Date.now();
+    const newProject = createManuscriptIntakeProject({
+      projectId: `proj_${now}`,
+      projectTitle: submission.projectTitle,
+      sourceLabel: submission.sourceLabel,
+      pastedText: submission.pastedText,
+      importedAt: now,
+      sourceDocumentId: `source_${now}`,
+    });
 
     setProjects((prev) => [newProject, ...prev]);
-    setActiveProjectId(newId);
+    setActiveProjectId(newProject.id);
     setCandidate(null);
     setHistoryStack([]);
     setWorkbenchError(null);
+    setShowIntakeModal(false);
   };
 
   // Framework Pipeline Execution
@@ -569,7 +530,7 @@ export default function App() {
           projects={projects}
           activeProject={activeProject}
           onSelectProject={setActiveProjectId}
-          onNewProject={handleNewProject}
+          onNewProject={handleOpenIntake}
           activeTab={activeTab}
           onSelectTab={setActiveTab}
           undoCount={historyStack.length}
@@ -647,6 +608,13 @@ export default function App() {
           <div>© Storyteller Press & Research Folio</div>
         </div>
       </footer>
+
+      {showIntakeModal && (
+        <ManuscriptIntakeModal
+          onCancel={handleCancelIntake}
+          onSubmit={handleSubmitIntake}
+        />
+      )}
     </div>
   );
 }

@@ -108,7 +108,7 @@ export const Header: React.FC<HeaderProps> = ({
           <div className="flex items-center gap-3 text-xs">
             <div className="hidden lg:flex items-center gap-2 text-xs font-serif text-[#5A554E] bg-[#FAF8F2] border border-[#1A1A1A]/15 px-3 py-1 rounded">
               <span className="font-sans text-[10px] uppercase tracking-wider font-bold text-[#1A1A1A]">POV:</span>
-              <span className="italic font-medium text-[#1A1A1A]">{povActor?.identity.name || povActor?.identity.working_label || 'actor_001'}</span>
+              <span className="italic font-medium text-[#1A1A1A]">{povActor?.identity.name || povActor?.identity.working_label || 'Unassigned'}</span>
               <span className="opacity-30">|</span>
               <span>Beat #{activeProject.currentPosition.beat}</span>
               <span className="opacity-30">|</span>
