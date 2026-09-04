@@ -28,6 +28,35 @@ import {
   ActorEntity,
 } from '../types';
 import { REWRITE_PRESETS } from '../data/defaultProjects';
+import type { WorkbenchOperationError } from '../lib/workbenchErrors';
+
+/**
+ * Compact, author-visible failure notice for the two Workbench operations that
+ * previously failed silently (execution, promotion). Deliberately not a toast or
+ * a general notification system: it is local state rendered inline, next to the
+ * control whose operation actually failed.
+ */
+const WorkbenchErrorNotice: React.FC<{ message: string; dark?: boolean }> = ({ message, dark }) => (
+  <div
+    role="alert"
+    className={`rounded p-4 space-y-1.5 text-xs font-sans border ${
+      dark
+        ? 'bg-[#8B263E]/25 border-[#E5A3B0]'
+        : 'bg-[#8B263E]/10 border-[#8B263E]'
+    }`}
+  >
+    <div
+      className={`flex items-center gap-2 font-bold uppercase tracking-wider text-[11px] ${
+        dark ? 'text-[#F3C6CF]' : 'text-[#8B263E]'
+      }`}
+    >
+      <AlertTriangle className="h-4 w-4" />
+      <span>Operation Failed</span>
+    </div>
+    <p className={dark ? 'text-white/80' : 'text-[#1A1A1A]'}>No story state was changed.</p>
+    <p className={`font-serif italic ${dark ? 'text-[#F3C6CF]' : 'text-[#8B263E]'}`}>{message}</p>
+  </div>
+);
 
 interface StoryEditorProps {
   project: StoryProject;
@@ -46,6 +75,7 @@ interface StoryEditorProps {
   onRejectCandidate: () => void;
   onEditCandidateText: (text: string) => void;
   isGenerating: boolean;
+  workbenchError: WorkbenchOperationError | null;
 }
 
 export const StoryEditor: React.FC<StoryEditorProps> = ({
@@ -60,6 +90,7 @@ export const StoryEditor: React.FC<StoryEditorProps> = ({
   onRejectCandidate,
   onEditCandidateText,
   isGenerating,
+  workbenchError,
 }) => {
   const [operation, setOperation] = useState<OperatingMode>('CONTINUATION');
   const [distance, setDistance] = useState<NarrativeDistance>('BEAT');
@@ -372,6 +403,11 @@ export const StoryEditor: React.FC<StoryEditorProps> = ({
               </div>
             )}
 
+            {/* Promotion Failure Notice */}
+            {workbenchError && workbenchError.source === 'promote' && (
+              <WorkbenchErrorNotice message={workbenchError.message} dark />
+            )}
+
             {/* Action Buttons: Accept vs Reject */}
             <div className="flex flex-wrap items-center justify-between gap-3 pt-3 border-t border-white/20">
               <button
@@ -608,6 +644,11 @@ export const StoryEditor: React.FC<StoryEditorProps> = ({
 
           {/* Execution Buttons */}
           <div className="space-y-3 pt-3 border-t border-[#1A1A1A]/15">
+            {/* Execution Failure Notice */}
+            {workbenchError && workbenchError.source === 'execute' && (
+              <WorkbenchErrorNotice message={workbenchError.message} />
+            )}
+
             <button
               onClick={handleRunFramework}
               disabled={isGenerating}

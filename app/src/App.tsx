@@ -27,6 +27,11 @@ import {
   readPromotionExtractionResponse,
   restorePromotionSnapshot,
 } from './lib/promotionIntegrity';
+import {
+  revalidationFailureReport,
+  workbenchOperationError,
+  type WorkbenchOperationError,
+} from './lib/workbenchErrors';
 
 export default function App() {
   const [projects, setProjects] = useState<StoryProject[]>(DEFAULT_PROJECTS);
@@ -35,6 +40,7 @@ export default function App() {
   const [candidate, setCandidate] = useState<CandidateGeneration | null>(null);
   const [isGenerating, setIsGenerating] = useState(false);
   const [historyStack, setHistoryStack] = useState<HistoryReceipt[]>([]);
+  const [workbenchError, setWorkbenchError] = useState<WorkbenchOperationError | null>(null);
 
   const activeProject = projects.find((p) => p.id === activeProjectId) || projects[0];
 
@@ -66,6 +72,7 @@ export default function App() {
     );
     setHistoryStack(remaining);
     setCandidate(null);
+    setWorkbenchError(null);
   };
 
   // New Blank Project Creation
@@ -138,6 +145,7 @@ export default function App() {
     setActiveProjectId(newId);
     setCandidate(null);
     setHistoryStack([]);
+    setWorkbenchError(null);
   };
 
   // Framework Pipeline Execution
@@ -148,6 +156,7 @@ export default function App() {
     rewriteContract?: RewriteContract;
   }) => {
     setIsGenerating(true);
+    setWorkbenchError(null);
     try {
       const response = await fetch('/api/framework/execute', {
         method: 'POST',
@@ -202,6 +211,7 @@ export default function App() {
       setCandidate(newCandidate);
     } catch (err) {
       console.error('Execution error:', err);
+      setWorkbenchError(workbenchOperationError('execute', err));
     } finally {
       setIsGenerating(false);
     }
@@ -229,6 +239,7 @@ export default function App() {
   // Accept Candidate and Promote to Story Canon Transactionally
   const handleAcceptCandidate = async () => {
     if (!candidate) return;
+    setWorkbenchError(null);
 
     // Snapshot pre-promotion project state for atomic rollback
     const preSnapshot: StoryProject = JSON.parse(JSON.stringify(activeProject));
@@ -443,13 +454,16 @@ export default function App() {
       setCandidate(null);
     } catch (err) {
       console.error('[Transactional Promotion Failed]', err);
-      // Restore pre-promotion snapshot
+      // Restore pre-promotion snapshot; the candidate/review text is left untouched
+      // (it was never cleared on this path) so the author's work is not lost.
       setProjects((prev) => restorePromotionSnapshot(prev, activeProjectId, preSnapshot));
+      setWorkbenchError(workbenchOperationError('promote', err));
     }
   };
 
   const handleRejectCandidate = () => {
     setCandidate(null);
+    setWorkbenchError(null);
   };
 
   const handleEditCandidateText = async (text: string) => {
@@ -474,6 +488,11 @@ export default function App() {
       setCandidate((prev) => (prev ? { ...prev, validation: valReport } : null));
     } catch (e) {
       console.warn('Revalidation error:', e);
+      // The prose was already updated above; the old validation verdict no longer
+      // applies to it, so it must not be left looking trustworthy.
+      setCandidate((prev) => (
+        prev ? { ...prev, validation: revalidationFailureReport(e, prev.validation) } : null
+      ));
     }
   };
 
@@ -580,6 +599,7 @@ export default function App() {
               onRejectCandidate={handleRejectCandidate}
               onEditCandidateText={handleEditCandidateText}
               isGenerating={isGenerating}
+              workbenchError={workbenchError}
             />
           )}
 
