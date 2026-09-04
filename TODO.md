@@ -20,20 +20,72 @@ No AI, no mutation of canonical state. Segments an `AuthorSourceDocument` into
 non-semantic `SourceEvidenceUnit`s and produces `BootstrapDiscoveryPayload` proposals for
 B1 to review.
 
-- Reuse unmodified from `src/lib/codexEngine.ts` (confirmed, by inspection, that
-  `beatNumber`/`bNum` in each is an opaque provenance stamp, not baked-in canonical-beat
-  logic): `classifyEntityTypes`, `extractNovelEntityCandidates`, `detectIdentityEvidence`,
-  `detectEntityInteractions`, `extractClaimsFromProse`, `mergeClaims`,
-  `isGenericMentionClaim`.
+#### B2 pre-implementation contract
+
+**Detector adapter boundary.** Existing deterministic Codex-era detectors may be invoked
+internally, but their output types are not part of B2's public contract. Every detector
+result must pass through a bootstrap-discovery adapter that:
+
+- resolves evidence to exact offsets in the original `AuthorSourceDocument.exactText`;
+- produces valid `SourceEvidenceUnit`s whose `exactText` equals the referenced source slice;
+- maps only defensible B1 proposal categories and preserves ambiguity instead of coercing a
+  Codex classification into actor/object/location/faction;
+- strips Codex beat, reliability, and canonical-prose semantics from the public result;
+- treats detector snippets only as aids for locating evidence, never as evidence records;
+- cannot mutate source documents or canonical project state.
+
+Candidate internal detectors from `src/lib/codexEngine.ts` are
+`classifyEntityTypes`, `extractNovelEntityCandidates`, `detectIdentityEvidence`,
+`detectEntityInteractions`, `extractClaimsFromProse`, `mergeClaims`, and
+`isGenericMentionClaim`. Reuse of their implementations does not authorize direct reuse of
+their Codex-shaped return values; B2 owns the translation boundary.
+
+**Discovery confidence.** B2 confidence is deterministic review-assistance metadata only.
+It must not reuse Codex reliability, detector/model confidence floats, or canonical-beat
+counts. It must explain why a candidate is being shown using:
+
+- a classification state (`ambiguous` / `provisional` / `corroborated`);
+- the count of distinct supporting `SourceEvidenceUnit`s;
+- deterministic rule/reason identifiers.
+
+Confidence must never approve, reject, rank into canon, or otherwise affect admission
+automatically. B1's explicit author decision remains the only authority.
+
+**Scope freeze.** B2 discovers plausible bootstrap actors, objects, locations, and factions
+from all original manuscript text. It does not add threads, mysteries, generic relationship
+graphs, narrative memory, relevance retrieval, AI extraction, or new canonical schemas.
+Facts and generic relationships remain unsupported rather than being flattened into a
+supported category.
+
+#### B2 RED gate
+
+Before production implementation, commit focused failing tests proving:
+
+1. exact source-slice offsets and stable unit IDs, including repeated identical paragraphs;
+2. collision-free evidence across multiple source documents;
+3. zero mutation of source documents and canonical project state;
+4. single-token names such as Keen, Isla, Ulric, and Ironspire are discoverable;
+5. aliases/identity evidence do not create duplicate actors or automatically establish a
+   canonical name;
+6. character belief or perception is not emitted as objective fact;
+7. ambiguous Codex classifications are not silently forced into a supported B1 kind;
+8. confidence counts distinct source units rather than repeated matches in one unit and
+   reports deterministic reasons;
+9. unsupported facts/relationships cannot become applicable B1 entries;
+10. empty/whitespace-only inputs produce no proposals, and repeated runs preserve output
+    ordering and identifiers.
+
 - Do **not** reuse `computeDistinctEvidenceCount` / `calculateReliability` /
   `synthesizeCodex`'s orchestration — that is Codex reliability (corroboration across
   *canonical* narrative beats), a different concept from bootstrap confidence
-  (corroboration across *source* spans). `mergeClaims`'s contradiction-note text also
-  hardcodes the word "Beat" — needs relabeling before it reaches an author, not a logic
-  change.
+  (corroboration across *source* spans). `mergeClaims` mutates its derived claim records and
+  hardcodes the word "Beat" in contradiction notes; neither behavior may cross the adapter
+  boundary.
 - New: a deliberately non-semantic segmentation function (paragraph blocks or stable text
   spans — never called scenes/beats, never exposed as manuscript beats).
-- New: an orchestrator + bootstrap's own confidence field (explicitly not "reliability").
+- New: an orchestrator plus an explicit discovery-metadata contract carrying B2 confidence;
+  `BootstrapDiscoveryEntry` currently has no field for this metadata, so freeze that shape
+  in RED before implementing the orchestrator.
 
 ### B3 — Structural Review UI
 - The `BEGIN STRUCTURAL REVIEW` entry point in the "Composition Pipeline Unavailable"
