@@ -172,7 +172,7 @@ export function createMentionedObject(
     identity: {
       name: entity.name || null,
       working_label: entity.working_label || 'discovered object',
-      aliases: entity.aliases || [],
+      aliases: entity.aliases ? [...entity.aliases] : [],
     },
     current_holder_id: null,
     current_location_id: currentLocationId,

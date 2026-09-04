@@ -291,6 +291,32 @@ function applySupportedEntry(
   }
 }
 
+type ResolvedMentionId =
+  | { readonly status: 'admitted'; readonly id: string }
+  | { readonly status: 'rejected' }
+  | { readonly status: 'unknown' };
+
+/**
+ * Resolves a source-extraction entity id to its canonical id.
+ *
+ * A source mention or relationship always carries the *original* id a proposal was
+ * extracted under. If that proposal was admitted under a different id (an "edited"
+ * entity-identity correction), references to the original id must follow the entity
+ * to its admitted id rather than going dangling or being silently dropped.
+ */
+function resolveCanonicalMentionId(
+  id: string,
+  availableIds: ReadonlySet<string>,
+  proposedIds: ReadonlySet<string>,
+  admittedIdByOriginalId: ReadonlyMap<string, string>,
+): ResolvedMentionId {
+  if (proposedIds.has(id)) {
+    const admittedId = admittedIdByOriginalId.get(id);
+    return admittedId === undefined ? { status: 'rejected' } : { status: 'admitted', id: admittedId };
+  }
+  return availableIds.has(id) ? { status: 'admitted', id } : { status: 'unknown' };
+}
+
 function canonicalizeMentions(
   draft: StoryProject,
   manifest: PromotionManifest,
@@ -309,24 +335,41 @@ function canonicalizeMentions(
   const admitted: MentionRecord[] = [];
 
   for (const sourceMention of manifest.sourceMentions) {
-    if (proposedIds.has(sourceMention.entity_id)) {
-      const admittedId = admittedIdByOriginalId.get(sourceMention.entity_id);
-      if (admittedId !== sourceMention.entity_id) continue;
-    }
-    if (!availableIds.has(sourceMention.entity_id)) {
-      if (proposedIds.has(sourceMention.entity_id)) continue;
+    const resolvedSubject = resolveCanonicalMentionId(
+      sourceMention.entity_id,
+      availableIds,
+      proposedIds,
+      admittedIdByOriginalId,
+    );
+    if (resolvedSubject.status === 'unknown') {
       throw new Error(`Mention referential integrity failed: unknown entity ${sourceMention.entity_id}`);
     }
+    if (resolvedSubject.status === 'rejected') continue;
     if (existingMentionIds.has(sourceMention.id)) {
       throw new Error(`Mention referential integrity failed: duplicate mention ${sourceMention.id}`);
     }
-    for (const relationship of sourceMention.extracted_relationships) {
-      if (!availableIds.has(relationship.target_id)) {
+
+    const resolvedRelationships = sourceMention.extracted_relationships.map((relationship) => {
+      const resolvedTarget = resolveCanonicalMentionId(
+        relationship.target_id,
+        availableIds,
+        proposedIds,
+        admittedIdByOriginalId,
+      );
+      if (resolvedTarget.status !== 'admitted') {
         throw new Error(`Mention referential integrity failed: unknown relationship target ${relationship.target_id}`);
       }
-    }
+      return resolvedTarget.id === relationship.target_id
+        ? relationship
+        : { ...relationship, target_id: resolvedTarget.id };
+    });
+
     existingMentionIds.add(sourceMention.id);
-    admitted.push(structuredClone(sourceMention));
+    admitted.push({
+      ...structuredClone(sourceMention),
+      entity_id: resolvedSubject.id,
+      extracted_relationships: resolvedRelationships,
+    });
   }
   return admitted;
 }
