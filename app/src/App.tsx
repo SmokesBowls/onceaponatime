@@ -34,6 +34,10 @@ import {
   type WorkbenchOperationError,
 } from './lib/workbenchErrors';
 import { createManuscriptIntakeProject } from './lib/manuscriptIntake';
+import {
+  canDispatchFrameworkExecution,
+  NARRATIVE_STRUCTURE_UNESTABLISHED_MESSAGE,
+} from './lib/compositionReadiness';
 
 export default function App() {
   const [projects, setProjects] = useState<StoryProject[]>(DEFAULT_PROJECTS);
@@ -116,6 +120,13 @@ export default function App() {
     authorPrompt: string;
     rewriteContract?: RewriteContract;
   }) => {
+    // Defense in depth: StoryEditor already disables the Execute control for
+    // a project that fails this exact check, so this should be unreachable.
+    // Never dispatch the request anyway if it somehow is.
+    if (!canDispatchFrameworkExecution(activeProject)) {
+      setWorkbenchError(workbenchOperationError('execute', new Error(NARRATIVE_STRUCTURE_UNESTABLISHED_MESSAGE)));
+      return;
+    }
     setIsGenerating(true);
     setWorkbenchError(null);
     try {

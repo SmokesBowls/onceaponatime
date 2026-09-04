@@ -9,7 +9,7 @@
     "start": "node dist/server.cjs",
     "clean": "rm -rf dist server.js",
     "lint": "tsc --noEmit",
-    "test": "npm run test:hermes-provider && npm run test:stage1-hermes && npm run test:stage2-hermes && npm run test:stage2-envelope && npm run test:promotion-integrity && npm run test:promotion-manifest && npm run test:workbench-errors && npm run test:manuscript-intake && npm run test:fail-closed && tsx tests/epistemicContextCompiler.test.ts && tsx tests/validationVerification.test.ts && tsx tests/codexProgressiveMemory.test.ts",
+    "test": "npm run test:hermes-provider && npm run test:stage1-hermes && npm run test:stage2-hermes && npm run test:stage2-envelope && npm run test:promotion-integrity && npm run test:promotion-manifest && npm run test:workbench-errors && npm run test:manuscript-intake && npm run test:composition-readiness && npm run test:fail-closed && tsx tests/epistemicContextCompiler.test.ts && tsx tests/validationVerification.test.ts && tsx tests/codexProgressiveMemory.test.ts",
     "test:hermes-provider": "tsx tests/hermesProvider.test.ts",
     "test:receipt-interfaces": "tsx tests/receiptBearingInterfaces.test.ts",
     "test:stage1-hermes": "tsx tests/stage1HermesActivation.test.ts",
@@ -19,6 +19,7 @@
     "test:promotion-manifest": "tsx tests/promotionManifest.test.ts",
     "test:workbench-errors": "tsx tests/workbenchErrors.test.ts",
     "test:manuscript-intake": "tsx tests/manuscriptIntake.test.ts",
+    "test:composition-readiness": "tsx tests/compositionReadiness.test.ts",
     "test:fail-closed": "tsx tests/failClosedProvider.test.ts"
   },
   "dependencies": {

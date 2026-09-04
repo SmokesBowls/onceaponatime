@@ -13,6 +13,7 @@ import {
   FolderOpen,
 } from 'lucide-react';
 import { StoryProject } from '../types';
+import { describeBeatPosition } from '../lib/compositionReadiness';
 
 interface HeaderProps {
   projects: StoryProject[];
@@ -110,7 +111,7 @@ export const Header: React.FC<HeaderProps> = ({
               <span className="font-sans text-[10px] uppercase tracking-wider font-bold text-[#1A1A1A]">POV:</span>
               <span className="italic font-medium text-[#1A1A1A]">{povActor?.identity.name || povActor?.identity.working_label || 'Unassigned'}</span>
               <span className="opacity-30">|</span>
-              <span>Beat #{activeProject.currentPosition.beat}</span>
+              <span>{describeBeatPosition(activeProject)}</span>
               <span className="opacity-30">|</span>
               <span className="truncate max-w-[150px]">{activeProject.currentPosition.location_label}</span>
             </div>

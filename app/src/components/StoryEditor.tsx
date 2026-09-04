@@ -30,6 +30,10 @@ import {
 } from '../types';
 import { REWRITE_PRESETS } from '../data/defaultProjects';
 import type { WorkbenchOperationError } from '../lib/workbenchErrors';
+import {
+  assessCompositionReadiness,
+  NARRATIVE_STRUCTURE_UNESTABLISHED_MESSAGE,
+} from '../lib/compositionReadiness';
 
 /**
  * Compact, author-visible failure notice for the two Workbench operations that
@@ -103,6 +107,10 @@ export const StoryEditor: React.FC<StoryEditorProps> = ({
   const [editingBeatContent, setEditingBeatContent] = useState('');
   const [nakedComparisonText, setNakedComparisonText] = useState<string | null>(null);
   const [isNakedLoading, setIsNakedLoading] = useState(false);
+
+  const readiness = assessCompositionReadiness(project);
+  const hasAnyActors = project.actors.length > 0;
+  const hasAnyLocations = project.locations.length > 0;
 
   const narrativeDistances: Array<{ id: NarrativeDistance; label: string; desc: string }> = [
     { id: 'FRAGMENT', label: 'Fragment', desc: '1 sensory or micro-action detail' },
@@ -569,17 +577,23 @@ export const StoryEditor: React.FC<StoryEditorProps> = ({
                 <Eye className="h-3 w-3 text-[#1A1A1A]" />
                 <span>POV Actor:</span>
               </label>
-              <select
-                className="w-full bg-[#FDFCF8] border border-[#1A1A1A]/30 rounded px-2.5 py-1.5 text-xs text-[#1A1A1A] font-serif italic focus:outline-none focus:border-[#1A1A1A]"
-                value={project.activePovActorId}
-                onChange={(e) => onSetPovActor(e.target.value)}
-              >
-                {project.actors.map((actor) => (
-                  <option key={actor.id} value={actor.id}>
-                    {actor.identity.name || actor.identity.working_label} ({actor.id})
-                  </option>
-                ))}
-              </select>
+              {hasAnyActors ? (
+                <select
+                  className="w-full bg-[#FDFCF8] border border-[#1A1A1A]/30 rounded px-2.5 py-1.5 text-xs text-[#1A1A1A] font-serif italic focus:outline-none focus:border-[#1A1A1A]"
+                  value={project.activePovActorId}
+                  onChange={(e) => onSetPovActor(e.target.value)}
+                >
+                  {project.actors.map((actor) => (
+                    <option key={actor.id} value={actor.id}>
+                      {actor.identity.name || actor.identity.working_label} ({actor.id})
+                    </option>
+                  ))}
+                </select>
+              ) : (
+                <div className="w-full bg-[#E5E2D9]/50 border border-[#1A1A1A]/20 rounded px-2.5 py-1.5 text-xs text-[#736B63] font-serif italic">
+                  Unassigned / Not established
+                </div>
+              )}
             </div>
 
             <div>
@@ -587,20 +601,26 @@ export const StoryEditor: React.FC<StoryEditorProps> = ({
                 <Compass className="h-3 w-3 text-[#1A1A1A]" />
                 <span>Current Location:</span>
               </label>
-              <select
-                className="w-full bg-[#FDFCF8] border border-[#1A1A1A]/30 rounded px-2.5 py-1.5 text-xs text-[#1A1A1A] font-serif italic focus:outline-none focus:border-[#1A1A1A]"
-                value={project.currentPosition.location_id}
-                onChange={(e) => {
-                  const loc = project.locations.find((l) => l.id === e.target.value);
-                  onSetLocation(e.target.value, loc?.identity.name || loc?.identity.working_label || e.target.value);
-                }}
-              >
-                {project.locations.map((loc) => (
-                  <option key={loc.id} value={loc.id}>
-                    {loc.identity.name || loc.identity.working_label} ({loc.id})
-                  </option>
-                ))}
-              </select>
+              {hasAnyLocations ? (
+                <select
+                  className="w-full bg-[#FDFCF8] border border-[#1A1A1A]/30 rounded px-2.5 py-1.5 text-xs text-[#1A1A1A] font-serif italic focus:outline-none focus:border-[#1A1A1A]"
+                  value={project.currentPosition.location_id}
+                  onChange={(e) => {
+                    const loc = project.locations.find((l) => l.id === e.target.value);
+                    onSetLocation(e.target.value, loc?.identity.name || loc?.identity.working_label || e.target.value);
+                  }}
+                >
+                  {project.locations.map((loc) => (
+                    <option key={loc.id} value={loc.id}>
+                      {loc.identity.name || loc.identity.working_label} ({loc.id})
+                    </option>
+                  ))}
+                </select>
+              ) : (
+                <div className="w-full bg-[#E5E2D9]/50 border border-[#1A1A1A]/20 rounded px-2.5 py-1.5 text-xs text-[#736B63] font-serif italic">
+                  Not established
+                </div>
+              )}
             </div>
           </div>
 
@@ -668,18 +688,22 @@ export const StoryEditor: React.FC<StoryEditorProps> = ({
               value={promptText}
               onChange={(e) => setPromptText(e.target.value)}
             />
-            {/* Quick Starters */}
-            <div className="flex flex-wrap gap-1.5 pt-1">
-              {quickPrompts.map((qp, idx) => (
-                <button
-                  key={idx}
-                  onClick={() => setPromptText(qp)}
-                  className="text-[10px] font-sans uppercase tracking-wider px-2 py-0.5 rounded bg-[#E5E2D9] hover:bg-[#D8D4C7] text-[#5A554E] hover:text-[#1A1A1A] border border-[#1A1A1A]/10 transition"
-                >
-                  + {qp}
-                </button>
-              ))}
-            </div>
+            {/* Quick Starters -- only meaningful once the project has established
+                actors/locations of its own; these are illustrative demo prompts,
+                not suggestions grounded in an imported project's own content. */}
+            {readiness.ready && (
+              <div className="flex flex-wrap gap-1.5 pt-1">
+                {quickPrompts.map((qp, idx) => (
+                  <button
+                    key={idx}
+                    onClick={() => setPromptText(qp)}
+                    className="text-[10px] font-sans uppercase tracking-wider px-2 py-0.5 rounded bg-[#E5E2D9] hover:bg-[#D8D4C7] text-[#5A554E] hover:text-[#1A1A1A] border border-[#1A1A1A]/10 transition"
+                  >
+                    + {qp}
+                  </button>
+                ))}
+              </div>
+            )}
           </div>
 
           {/* Execution Buttons */}
@@ -689,28 +713,44 @@ export const StoryEditor: React.FC<StoryEditorProps> = ({
               <WorkbenchErrorNotice message={workbenchError.message} />
             )}
 
-            <button
-              onClick={handleRunFramework}
-              disabled={isGenerating}
-              className="w-full py-3.5 rounded bg-[#1A1A1A] hover:bg-[#333333] text-[#FDFCF8] font-sans font-bold uppercase tracking-[0.15em] text-xs flex items-center justify-center gap-2 shadow-md transition disabled:opacity-50 disabled:cursor-not-allowed"
-            >
-              {isGenerating ? (
-                <>
-                  <span className="h-4 w-4 border-2 border-[#FDFCF8] border-t-transparent rounded-full animate-spin" />
-                  <span>Enforcing Epistemic Boundaries...</span>
-                </>
-              ) : (
-                <>
-                  <Play className="h-3.5 w-3.5 fill-[#FDFCF8]" />
-                  <span>Execute Onceaponatime Pipeline</span>
-                </>
-              )}
-            </button>
+            {readiness.ready ? (
+              <button
+                onClick={handleRunFramework}
+                disabled={isGenerating}
+                className="w-full py-3.5 rounded bg-[#1A1A1A] hover:bg-[#333333] text-[#FDFCF8] font-sans font-bold uppercase tracking-[0.15em] text-xs flex items-center justify-center gap-2 shadow-md transition disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                {isGenerating ? (
+                  <>
+                    <span className="h-4 w-4 border-2 border-[#FDFCF8] border-t-transparent rounded-full animate-spin" />
+                    <span>Enforcing Epistemic Boundaries...</span>
+                  </>
+                ) : (
+                  <>
+                    <Play className="h-3.5 w-3.5 fill-[#FDFCF8]" />
+                    <span>Execute Onceaponatime Pipeline</span>
+                  </>
+                )}
+              </button>
+            ) : (
+              <div className="w-full py-3.5 px-4 rounded bg-[#E5E2D9]/60 border border-[#1A1A1A]/20 text-center space-y-1.5">
+                <div className="flex items-center justify-center gap-2 text-[#5A554E] font-sans font-bold uppercase tracking-[0.15em] text-xs">
+                  <Lock className="h-3.5 w-3.5" />
+                  <span>Composition Pipeline Unavailable</span>
+                </div>
+                <p className="text-[#5A554E] font-serif italic text-xs">
+                  {NARRATIVE_STRUCTURE_UNESTABLISHED_MESSAGE}
+                </p>
+                <p className="text-[#8C827A] font-sans text-[10px] uppercase tracking-wider">
+                  Structural review must establish at least one actor and one location before generation can run.
+                </p>
+              </div>
+            )}
 
             <button
               onClick={handleRunNakedComparison}
-              disabled={isNakedLoading || isGenerating}
-              className="w-full py-2.5 rounded bg-[#E5E2D9] hover:bg-[#D8D4C7] text-[#1A1A1A] text-xs font-sans uppercase tracking-wider font-bold flex items-center justify-center gap-1.5 border border-[#1A1A1A]/20 transition"
+              disabled={isNakedLoading || isGenerating || !readiness.ready}
+              title={readiness.ready ? undefined : NARRATIVE_STRUCTURE_UNESTABLISHED_MESSAGE}
+              className="w-full py-2.5 rounded bg-[#E5E2D9] hover:bg-[#D8D4C7] text-[#1A1A1A] text-xs font-sans uppercase tracking-wider font-bold flex items-center justify-center gap-1.5 border border-[#1A1A1A]/20 transition disabled:opacity-50 disabled:cursor-not-allowed"
             >
               {isNakedLoading ? (
                 <span>Querying Naked Model...</span>
