@@ -416,10 +416,6 @@ export function isProposalForKind(kind: BootstrapProposalKind, proposal: unknown
   }
 }
 
-function entityProposalId(proposal: BootstrapEntityProposal): string {
-  return proposal.id;
-}
-
 export function isBootstrapEntityProposal(value: BootstrapProposal): value is BootstrapEntityProposal {
   return isBootstrapEntityProposalKind(value.kind as BootstrapProposalKind);
 }
@@ -630,5 +626,3 @@ export function validateBootstrapManifestStructure(manifest: BootstrapManifest):
     }
   }
 }
-
-export { entityProposalId };

@@ -642,6 +642,223 @@ function testDeterministicResultForIdenticalInputs() {
   assert.deepEqual(resultA.preBootstrapSnapshot, resultB.preBootstrapSnapshot);
 }
 
+// ---------------------------------------------------------------------------
+// Adversarial follow-ups
+// ---------------------------------------------------------------------------
+
+function testEditCannotCaptureARejectedProposalsOriginalId() {
+  const project = sourceOnlyProject();
+  const doc = firstDoc(project);
+  let manifest = buildBootstrapManifest(project, {
+    entries: [
+      entry(actorProposal('actor_a', 'Actor A'), [evidenceFor(doc, 'u1', 'Locke')]),
+      entry(actorProposal('actor_b', 'Actor B'), [evidenceFor(doc, 'u2', 'Mara')]),
+    ],
+  });
+  manifest = decideBootstrapManifestEntry(
+    manifest,
+    entriesOfKind(manifest, 'actor_proposal')[1].id,
+    'rejected',
+  );
+  const captureAttempt = actorProposal('actor_b', 'Actor A (renamed)');
+  manifest = decideBootstrapManifestEntry(
+    manifest,
+    entriesOfKind(manifest, 'actor_proposal')[0].id,
+    'edited',
+    captureAttempt,
+  );
+  assert.throws(
+    () => prepareBootstrap(project, manifest, { activePovActorId: null, currentLocationId: null }, 1),
+    /duplicate entity/i,
+    'an edit must not be able to capture a rejected sibling proposal\'s original id',
+  );
+}
+
+function testFactionMemberReferencingARejectedActorFailsClosed() {
+  const project = sourceOnlyProject();
+  const doc = firstDoc(project);
+  let manifest = buildBootstrapManifest(project, {
+    entries: [
+      entry(actorProposal('actor_mara', 'Mara'), [evidenceFor(doc, 'u1', 'Mara')]),
+      entry(factionProposal('faction_guild', 'the guild', { member_actor_ids: ['actor_mara'] }), [evidenceFor(doc, 'u2', 'Mara')]),
+    ],
+  });
+  manifest = decideFirstOfKind(manifest, 'actor_proposal', 'rejected');
+  manifest = decideFirstOfKind(manifest, 'faction_proposal', 'approved');
+  assert.throws(
+    () => prepareBootstrap(project, manifest, { activePovActorId: null, currentLocationId: null }, 1),
+    /unresolved actor/i,
+  );
+}
+
+function testActorInitialLocationReferencingARejectedLocationFailsClosed() {
+  const project = sourceOnlyProject();
+  const doc = firstDoc(project);
+  let manifest = buildBootstrapManifest(project, {
+    entries: [
+      entry(locationProposal('location_well', 'the old well'), [evidenceFor(doc, 'u1', 'the old well')]),
+      entry(actorProposal('actor_mara', 'Mara', { initial_location_id: 'location_well' }), [evidenceFor(doc, 'u2', 'Mara')]),
+    ],
+  });
+  manifest = decideFirstOfKind(manifest, 'location_proposal', 'rejected');
+  manifest = decideFirstOfKind(manifest, 'actor_proposal', 'approved');
+  assert.throws(
+    () => prepareBootstrap(project, manifest, { activePovActorId: null, currentLocationId: null }, 1),
+    /does not resolve to an admitted location/i,
+  );
+}
+
+function testAssignmentToARejectedActorFailsClosed() {
+  const project = sourceOnlyProject();
+  const doc = firstDoc(project);
+  let manifest = buildBootstrapManifest(project, {
+    entries: [
+      entry(locationProposal('location_well', 'the old well'), [evidenceFor(doc, 'u1', 'the old well')]),
+      entry(actorProposal('actor_mara', 'Mara'), [evidenceFor(doc, 'u2', 'Mara')]),
+    ],
+  });
+  manifest = decideFirstOfKind(manifest, 'location_proposal', 'approved');
+  manifest = decideFirstOfKind(manifest, 'actor_proposal', 'rejected');
+  assert.throws(
+    () => prepareBootstrap(project, manifest, { activePovActorId: 'actor_mara', currentLocationId: 'location_well' }, 1),
+    /does not resolve to an admitted actor/i,
+  );
+}
+
+function testAssignmentToTheWrongEntityKindFailsClosed() {
+  const { project, manifest, assignments } = standardApprovedFixture();
+  assert.throws(
+    () => prepareBootstrap(project, manifest, { ...assignments, activePovActorId: assignments.currentLocationId }, 1),
+    /does not resolve to an admitted actor/i,
+    'a location id used as the POV assignment must not be silently accepted as an actor',
+  );
+  assert.throws(
+    () => prepareBootstrap(project, manifest, { ...assignments, currentLocationId: assignments.activePovActorId }, 1),
+    /does not resolve to an admitted location/i,
+    'an actor id used as the location assignment must not be silently accepted as a location',
+  );
+}
+
+function testEmptyStringAssignmentIsNotSilentlyAccepted() {
+  const { project, manifest, assignments } = standardApprovedFixture();
+  assert.throws(
+    () => prepareBootstrap(project, manifest, { ...assignments, activePovActorId: '' }, 1),
+    /does not resolve to an admitted actor/i,
+    'an empty string (the same sentinel Manuscript Intake uses for "unestablished") must not resolve to anything',
+  );
+}
+
+function testNoPartialMutationWhenOnlyAssignmentResolutionFails() {
+  // Distinct code path from testNoPartialMutationOnFailure: every entity
+  // proposal applies successfully, and only the later, separate assignment
+  // resolution step fails.
+  const project = sourceOnlyProject();
+  const doc = firstDoc(project);
+  let manifest = buildBootstrapManifest(project, {
+    entries: [
+      entry(locationProposal('location_well', 'the old well'), [evidenceFor(doc, 'u1', 'the old well')]),
+      entry(actorProposal('actor_mara', 'Mara'), [evidenceFor(doc, 'u2', 'Mara')]),
+    ],
+  });
+  manifest = decideAllSupported(manifest);
+  const before = JSON.parse(JSON.stringify(project));
+
+  assert.throws(
+    () => prepareBootstrap(project, manifest, { activePovActorId: 'actor_never_admitted', currentLocationId: 'location_well' }, 1),
+  );
+  assert.deepEqual(project, before, 'the original project must remain untouched even when every entity applied cleanly and only the assignment step failed');
+}
+
+function testRelationshipProposalApprovedFailsClosed() {
+  const project = sourceOnlyProject();
+  const doc = firstDoc(project);
+  let manifest = buildBootstrapManifest(project, {
+    entries: [entry(relationshipProposal('possesses', 'actor_mara', 'object_key'), [evidenceFor(doc, 'u1', 'Mara')])],
+  });
+  const target = manifest.entries[0];
+  assert.equal(target.supportedForApplication, false);
+  manifest = decideBootstrapManifestEntry(manifest, target.id, 'approved');
+  assert.throws(
+    () => prepareBootstrap(project, manifest, { activePovActorId: null, currentLocationId: null }, 1),
+    /unsupported/i,
+  );
+}
+
+function testReceiptAccuracyAcrossMixedDecisions() {
+  const project = sourceOnlyProject();
+  const doc = firstDoc(project);
+  let manifest = buildBootstrapManifest(project, {
+    entries: [
+      entry(locationProposal('location_well', 'the old well'), [evidenceFor(doc, 'u1', 'the old well')]), // approved
+      entry(actorProposal('actor_mara', 'Mara'), [evidenceFor(doc, 'u2', 'Mara')]),                        // approved
+      entry(actorProposal('actor_ghost', 'a ghost'), [evidenceFor(doc, 'u3', 'well')]),                    // rejected
+      entry(factProposal('the well is haunted'), [evidenceFor(doc, 'u4', 'old well')]),                     // rejected (unsupported)
+    ],
+  });
+  manifest = decideBootstrapManifestEntry(manifest, entriesOfKind(manifest, 'location_proposal')[0].id, 'approved');
+  manifest = decideBootstrapManifestEntry(manifest, entriesOfKind(manifest, 'actor_proposal')[0].id, 'approved');
+  manifest = decideBootstrapManifestEntry(manifest, entriesOfKind(manifest, 'actor_proposal')[1].id, 'rejected');
+  manifest = decideBootstrapManifestEntry(manifest, entriesOfKind(manifest, 'fact_proposal')[0].id, 'rejected');
+
+  const { bootstrapReceipt } = prepareBootstrap(
+    project,
+    manifest,
+    { activePovActorId: 'actor_mara', currentLocationId: 'location_well' },
+    1,
+  );
+
+  for (const e of bootstrapReceipt.entries) {
+    if (e.kind === 'location_proposal' || (e.kind === 'actor_proposal' && (e.proposed as { id: string }).id === 'actor_mara')) {
+      assert.equal(e.applied, true, `${e.entryId} was approved and admitted; the receipt must say it was applied`);
+      assert.ok(e.admitted !== null);
+    } else {
+      assert.equal(e.applied, false, `${e.entryId} was rejected or unsupported; the receipt must not claim it was applied`);
+      assert.equal(e.admitted, null);
+    }
+  }
+  assert.equal(bootstrapReceipt.appliedEntryIds.length, 2);
+  assert.equal(bootstrapReceipt.unsupportedEntryIds.length, 1);
+}
+
+function testTamperedEvidenceExactTextFailsClosed() {
+  const project = sourceOnlyProject();
+  const doc = firstDoc(project);
+  const realEvidence = evidenceFor(doc, 'u1', 'Mara');
+  const tamperedEvidence: SourceEvidenceUnit = { ...realEvidence, exactText: 'Someone else entirely' };
+  const manifest = buildBootstrapManifest(project, {
+    entries: [entry(actorProposal('actor_mara', 'Mara'), [tamperedEvidence])],
+  });
+  assert.throws(
+    () => validateBootstrapManifestStructure(manifest),
+    /evidence exactText does not match/i,
+    'an evidence unit whose exactText does not match the bound source document at its own offsets must be rejected',
+  );
+  assert.throws(
+    () => prepareBootstrap(project, decideAllSupported(manifest), { activePovActorId: null, currentLocationId: null }, 1),
+    /evidence exactText does not match/i,
+  );
+}
+
+function testFreshnessCheckedForFingerprintOnlyIsInsufficient() {
+  // A manifest with a colliding fingerprint but genuinely different bound
+  // source content would (if fingerprint were the sole freshness proof)
+  // wrongly appear fresh. Simulate the failure mode directly: hand-construct
+  // a manifest whose boundSourceFingerprint is internally self-consistent
+  // with its (already-stale-relative-to-the-project) boundSourceDocuments,
+  // and confirm prepareBootstrap still catches it via exact comparison, not
+  // by trusting the fingerprint field.
+  const { project, manifest, assignments } = standardApprovedFixture();
+  const editedProject: StoryProject = {
+    ...project,
+    sourceDocuments: [{ ...firstDoc(project), exactText: 'Totally different, but same length as the original, XX.' }],
+  };
+  // The manifest's own fingerprint is untouched and still self-consistent
+  // with *its own* boundSourceDocuments (nothing about the manifest object
+  // was tampered with) -- only the project changed.
+  assert.doesNotThrow(() => validateBootstrapManifestStructure(manifest));
+  assert.throws(() => prepareBootstrap(editedProject, manifest, assignments, 1), /stale/i);
+}
+
 function run() {
   testSupportedCategoryMatrix();
   testManifestCreationIsPure();
@@ -674,6 +891,17 @@ function run() {
   testNoNestedAliasingBetweenManifestInputAndResult();
   testUndoSnapshotIsIsolatedAndExact();
   testDeterministicResultForIdenticalInputs();
+  testEditCannotCaptureARejectedProposalsOriginalId();
+  testFactionMemberReferencingARejectedActorFailsClosed();
+  testActorInitialLocationReferencingARejectedLocationFailsClosed();
+  testAssignmentToARejectedActorFailsClosed();
+  testAssignmentToTheWrongEntityKindFailsClosed();
+  testEmptyStringAssignmentIsNotSilentlyAccepted();
+  testNoPartialMutationWhenOnlyAssignmentResolutionFails();
+  testRelationshipProposalApprovedFailsClosed();
+  testReceiptAccuracyAcrossMixedDecisions();
+  testTamperedEvidenceExactTextFailsClosed();
+  testFreshnessCheckedForFingerprintOnlyIsInsufficient();
   console.log('bootstrap manifest authority regression passed');
 }
 
