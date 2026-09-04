@@ -374,6 +374,61 @@ function testEditedEntityIdentityCannotCaptureRejectedProposalEvidence() {
   );
 }
 
+function testEditedEntityIdentityRemapsItsSourceMentionsRatherThanDroppingThem() {
+  const project = cloneProject();
+  const candidate = candidateFor(project);
+  const proposed = newObject('object_manifest_provisional');
+  const relatedMention = mention(project.activePovActorId, 'mention_related_actor');
+  relatedMention.extracted_relationships = [{ type: 'possessed_by', target_id: proposed.id }];
+  let manifest = buildPromotionManifest(project, candidate, extraction({
+    mentions: [mention(proposed.id), relatedMention],
+    proposedNewEntities: [proposed],
+  }));
+  const entry = entriesOfKind(manifest, 'entity_proposal')[0];
+  const admittedEntity = { ...proposed, id: 'object_manifest_final' };
+  manifest = decidePromotionManifestEntry(manifest, entry.id, 'edited', admittedEntity);
+
+  const { nextProject } = preparePromotion(project, candidate, manifest);
+
+  const carried = nextProject.mentions.filter((m) => m.entity_id === 'object_manifest_final');
+  const stale = nextProject.mentions.filter((m) => m.entity_id === proposed.id);
+  assert.equal(stale.length, 0, 'no mention may remain attached to the pre-edit provisional id');
+  assert.equal(carried.length, 1, 'the mention naming the entity must follow it to its admitted id');
+
+  const remappedRelationship = nextProject.mentions.find((m) => m.id === 'mention_related_actor');
+  assert.ok(remappedRelationship);
+  assert.equal(
+    remappedRelationship?.extracted_relationships[0]?.target_id,
+    'object_manifest_final',
+    'a relationship pointing at the renamed entity must also follow it to its admitted id',
+  );
+}
+
+function testAdmittedObjectAliasesAreIndependentOfTheFrozenManifest() {
+  const project = cloneProject();
+  const candidate = candidateFor(project);
+  const proposed = newObject('object_manifest_mutable_aliases');
+  let manifest = buildPromotionManifest(project, candidate, extraction({
+    proposedNewEntities: [proposed],
+  }));
+  const entry = entriesOfKind(manifest, 'entity_proposal')[0];
+  manifest = decidePromotionManifestEntry(manifest, entry.id, 'approved');
+
+  const { nextProject } = preparePromotion(project, candidate, manifest);
+  const admittedObject = nextProject.objects.find((object) => object.id === proposed.id);
+  assert.ok(admittedObject);
+  assert.equal(Object.isFrozen(admittedObject?.identity.aliases), false,
+    'a promoted object entity must own a mutable aliases array, not the frozen manifest array');
+
+  admittedObject!.identity.aliases.push('a later-discovered alias');
+  assert.deepEqual(admittedObject!.identity.aliases, ['compass', 'a later-discovered alias']);
+  assert.deepEqual(
+    manifest.entries.find((candidateEntry) => candidateEntry.id === entry.id)?.proposed,
+    proposed,
+    'mutating the admitted object must never leak back into the frozen Promotion Manifest proposal',
+  );
+}
+
 function testMalformedCanonicalIdentitiesAndMentionNumbersFailClosed() {
   const project = cloneProject();
   const candidate = candidateFor(project);
@@ -575,6 +630,8 @@ function run() {
   testUnknownMentionCannotEnterCanon();
   testRejectedNewEntityCannotAliasAnExistingEntityIdentity();
   testEditedEntityIdentityCannotCaptureRejectedProposalEvidence();
+  testEditedEntityIdentityRemapsItsSourceMentionsRatherThanDroppingThem();
+  testAdmittedObjectAliasesAreIndependentOfTheFrozenManifest();
   testMalformedCanonicalIdentitiesAndMentionNumbersFailClosed();
   testMentionAloneDoesNotProducePossessionAndExplicitPossessionChecksPriorHolder();
   testUnsupportedCategoriesAreHonestAndCannotApply();
