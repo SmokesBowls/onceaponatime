@@ -8,14 +8,16 @@ history here, strike it through or remove it once logged.
 ```text
 B1 authority + truthfulness closeout   ✅ done, pushed (c7815f9)
         ↓
-B2 — Deterministic Bootstrap Discovery  ← next
+B2 — Deterministic Bootstrap Discovery  ✅ done, pushed (7008fd2)
         ↓
-B3 — Structural Review UI
+B3a — Preserve B2 Review Metadata Through Bootstrap Manifest  ← next
+        ↓
+B3b–B3d — Structural Review UI + Author Admission
         ↓
 B4 — Optional AI Refinement
 ```
 
-### B2 — Deterministic Bootstrap Discovery
+### B2 — Deterministic Bootstrap Discovery ✅ shipped
 No AI, no mutation of canonical state. Segments an `AuthorSourceDocument` into
 non-semantic `SourceEvidenceUnit`s and produces `BootstrapDiscoveryPayload` proposals for
 B1 to review.
@@ -87,11 +89,62 @@ Before production implementation, commit focused failing tests proving:
   `BootstrapDiscoveryEntry` currently has no field for this metadata, so freeze that shape
   in RED before implementing the orchestrator.
 
-### B3 — Structural Review UI
+### B3a — Preserve B2 Review Metadata Through the Bootstrap Manifest Boundary
+
+B2 knows why a deterministic candidate was surfaced; B1 knows what the author decided.
+B3a closes the loss between those two records before any review UI is built:
+
+```text
+B2 EvidenceBackedBootstrapDiscoveryEntry
+        ↓ buildBootstrapManifest()
+B1 BootstrapManifestEntry
+  proposal + evidence + preserved discoveryConfidence? + author decision
+```
+
+**Origin finding.** The public `buildBootstrapManifest()` API and existing B1/interop tests
+legitimately construct discovery payloads without B2 confidence metadata. No live UI path
+currently guarantees that every manifest entry originates from `discoverBootstrap()`.
+Therefore `discoveryConfidence` remains required on B2-produced discovery entries but is
+optional on `BootstrapManifestEntry`; the builder must preserve it exactly when supplied and
+must not fabricate it when absent.
+
+#### B3a RED gate
+
+Before production changes, commit focused failing tests proving:
+
+1. B2-produced entries require discovery confidence, and `buildBootstrapManifest()` preserves
+   classification, distinct-support count, and deterministic reason identifiers exactly;
+2. legacy/manual/non-B2 discovery entries remain valid without confidence, and the manifest
+   leaves that metadata absent rather than inventing it;
+3. approve/edit/reject transitions preserve the original confidence byte-for-byte and never
+   let an edited proposal rewrite why the detector originally surfaced the candidate;
+4. malformed confidence classification, support count, or reason identifiers fail structural
+   validation when metadata is present;
+5. `supportingUnitCount` equals the number of distinct cited `SourceEvidenceUnit.unitId` values;
+6. discovery confidence participates in manifest review-artifact fingerprinting, so different
+   discovery reasoning cannot produce the same manifest identity;
+7. confidence classification semantics are preserved exactly as B2 supplied them — B3a does
+   not infer or reinterpret `ambiguous`, `provisional`, or `corroborated` from the count;
+8. confidence alone cannot approve/reject an entry, alter assignments, bypass pending decisions,
+   or change which explicit admitted proposal `prepareBootstrap()` applies;
+9. two otherwise equivalent, fully author-decided manifests with different valid confidence
+   metadata produce the same canonical project result (receipt/manifest identities may differ);
+10. building, deciding, validating, and applying remain deterministic and do not mutate source
+    documents, discovery payloads, manifests, assignments, or canonical project input.
+
+#### B3a hard non-goals
+
+- No React/UI changes and no `BEGIN STRUCTURAL REVIEW` button yet.
+- No new approval, editing, rejection, POV, or current-location interaction surface.
+- No automatic call to `prepareBootstrap()` and no canonical project mutation.
+- No persistence/resume layer, AI/B4 work, Promotion Manifest changes, facts, relationships,
+  schema expansion, or reinterpretation of B2 detector confidence.
+
+### B3b–B3d — Structural Review UI + Author Admission
 - The `BEGIN STRUCTURAL REVIEW` entry point in the "Composition Pipeline Unavailable"
   panel (`src/components/StoryEditor.tsx`) — currently there is no button there at all;
   this is the acknowledged UX dead end raised earlier and intentionally not stubbed out
-  ahead of B2/B3.
+  ahead of B2/B3a.
 - Show proposals + evidence, approve/edit/reject per entry.
 - Explicit POV/current-location picker (never inferred) wired to `BootstrapAssignments`.
 - Commits through B1's `prepareBootstrap()` — no new authority logic here.

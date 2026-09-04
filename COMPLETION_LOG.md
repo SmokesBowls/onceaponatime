@@ -104,5 +104,30 @@ panel, Accept/Reject flow) — never started, out of scope for every slice since
 
 **Pushed to `origin/main` at `c7815f9`.**
 
-**Not yet done:** B2 (deterministic discovery), B3 (structural review UI), B4 (optional AI
-refinement). See `TODO.md`.
+## B2 — Deterministic Bootstrap Discovery
+
+- Frozen RED contract (`7de7497`) and synchronous GREEN implementation
+  (`7008fd2`, `src/lib/bootstrapDiscovery.ts`).
+- Deterministically processes every `AuthorSourceDocument`, splitting exact source text into
+  deliberately non-semantic `SourceEvidenceUnit` paragraph blocks with stable,
+  document-qualified offset identities. Repeated identical paragraphs remain distinct evidence;
+  identical text in separate source documents cannot collide.
+- Produces review-only actor/object/location/faction proposals without mutating source documents
+  or canonical project state. Single-token names required by the real material are supported.
+- Keeps detector snippets subordinate to exact source spans, excludes unsupported facts and
+  generic relationships, and prevents Codex beat/reliability/canonical-prose semantics from
+  crossing the B2 adapter boundary.
+- Preserves ambiguous cross-kind observations as explicitly ambiguous review metadata rather
+  than silently coercing or deleting the defensible candidate. Identity disclosures deduplicate
+  provisional actors and retain aliases without automatically selecting a canonical name.
+- Discovery confidence is deterministic review information only: classification, number of
+  distinct supporting evidence units, and deterministic rule identifiers — never a truth score
+  or admission decision.
+- Focused B2 tests, adjacent regressions, canonical `npm test`, TypeScript lint, production build,
+  `git diff --check`, targeted toxic probes, and final independent review all passed before the
+  GREEN commit landed.
+
+**Pushed to `origin/main` at `7008fd2`.**
+
+**Not yet done:** B3a (lossless discovery-metadata handoff into the Bootstrap Manifest), the
+remaining B3 structural-review/admission UI slices, and B4 optional AI refinement. See `TODO.md`.
