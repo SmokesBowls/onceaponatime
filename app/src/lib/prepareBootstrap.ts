@@ -232,7 +232,13 @@ function applyActorProposal(
     },
     roles: { story: [], scene: [] },
     traits: {},
-    current_state: { fatigue: 0.1, fear: 0.1, certainty: 0.5, emotion: 'neutral' },
+    // fatigue/fear default to the floor (0.0), not a small positive value: the
+    // source text gives no evidence a bootstrapped actor is tired or afraid at
+    // all, and any value above the floor would assert exactly that. certainty
+    // (0.5, the scale's midpoint) and emotion ('neutral') are the genuinely
+    // uninformative-prior/no-specific-state choices for their own fields --
+    // see BOOTSTRAP_MANIFEST_ENGINEERING_REPORT.md's canonical-value audit.
+    current_state: { fatigue: 0.0, fear: 0.0, certainty: 0.5, emotion: 'neutral' },
     active_goals: [],
     current_location_id: locationId,
     possessions: [],

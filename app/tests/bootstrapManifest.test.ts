@@ -859,6 +859,17 @@ function testFreshnessCheckedForFingerprintOnlyIsInsufficient() {
   assert.throws(() => prepareBootstrap(editedProject, manifest, assignments, 1), /stale/i);
 }
 
+function testBootstrappedActorCarriesNoUnearnedStateClaim() {
+  // fatigue/fear must default to the floor (no evidence => none), not any
+  // positive value -- a bootstrapped actor with zero extracted state evidence
+  // must not read as "slightly tired" or "slightly afraid".
+  const { project, manifest, assignments } = standardApprovedFixture();
+  const { nextProject } = prepareBootstrap(project, manifest, assignments, 1);
+  const mara = nextProject.actors.find((a) => a.id === 'actor_mara');
+  assert.equal(mara?.current_state.fatigue, 0, 'fatigue must default to the floor, not a small positive claim');
+  assert.equal(mara?.current_state.fear, 0, 'fear must default to the floor, not a small positive claim');
+}
+
 function run() {
   testSupportedCategoryMatrix();
   testManifestCreationIsPure();
@@ -902,6 +913,7 @@ function run() {
   testReceiptAccuracyAcrossMixedDecisions();
   testTamperedEvidenceExactTextFailsClosed();
   testFreshnessCheckedForFingerprintOnlyIsInsufficient();
+  testBootstrappedActorCarriesNoUnearnedStateClaim();
   console.log('bootstrap manifest authority regression passed');
 }
 
