@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import type { AuthorSourceDocument, StoryProject } from '../src/types';
+import { DEFAULT_PROJECTS } from '../src/data/defaultProjects';
 import { createManuscriptIntakeProject } from '../src/lib/manuscriptIntake';
 import { assessCompositionReadiness } from '../src/lib/compositionReadiness';
 import {
@@ -860,14 +861,171 @@ function testFreshnessCheckedForFingerprintOnlyIsInsufficient() {
 }
 
 function testBootstrappedActorCarriesNoUnearnedStateClaim() {
-  // fatigue/fear must default to the floor (no evidence => none), not any
-  // positive value -- a bootstrapped actor with zero extracted state evidence
-  // must not read as "slightly tired" or "slightly afraid".
+  // Superseded by testBootstrapUnknownActorStateIsAbsentNotAuthoredZeroOrNeutral
+  // below: current_state 0/0.5/'neutral' is itself an unearned narrative
+  // claim, indistinguishable downstream from an authored one -- absence is
+  // the only honest representation. Kept as a thin smoke test.
   const { project, manifest, assignments } = standardApprovedFixture();
   const { nextProject } = prepareBootstrap(project, manifest, assignments, 1);
   const mara = nextProject.actors.find((a) => a.id === 'actor_mara');
-  assert.equal(mara?.current_state.fatigue, 0, 'fatigue must default to the floor, not a small positive claim');
-  assert.equal(mara?.current_state.fear, 0, 'fear must default to the floor, not a small positive claim');
+  assert.equal(mara?.current_state, undefined);
+}
+
+// ---------------------------------------------------------------------------
+// Truthfulness closeout: unknown must not be authored-zero/midpoint/neutral/
+// intact. These name the exact five claims from the audit individually, even
+// though today they all trace to the same underlying absence, so each is
+// independently traceable to the request that produced it.
+// ---------------------------------------------------------------------------
+
+function testBootstrapUnknownFatigueIsNotAuthoredFatigueZero() {
+  const { project, manifest, assignments } = standardApprovedFixture();
+  const { nextProject } = prepareBootstrap(project, manifest, assignments, 1);
+  const mara = nextProject.actors.find((a) => a.id === 'actor_mara');
+  assert.equal(mara?.current_state, undefined, 'no current_state at all -- not present-and-0');
+  assert.notEqual(mara?.current_state?.fatigue, 0);
+}
+
+function testBootstrapUnknownFearIsNotAuthoredFearZero() {
+  const { project, manifest, assignments } = standardApprovedFixture();
+  const { nextProject } = prepareBootstrap(project, manifest, assignments, 1);
+  const mara = nextProject.actors.find((a) => a.id === 'actor_mara');
+  assert.equal(mara?.current_state, undefined);
+  assert.notEqual(mara?.current_state?.fear, 0);
+}
+
+function testBootstrapUnknownCertaintyIsNotAuthoredCertaintyMidpoint() {
+  const { project, manifest, assignments } = standardApprovedFixture();
+  const { nextProject } = prepareBootstrap(project, manifest, assignments, 1);
+  const mara = nextProject.actors.find((a) => a.id === 'actor_mara');
+  assert.equal(mara?.current_state, undefined);
+  assert.notEqual(mara?.current_state?.certainty, 0.5);
+}
+
+function testBootstrapUnknownEmotionIsNotAuthoredNeutral() {
+  const { project, manifest, assignments } = standardApprovedFixture();
+  const { nextProject } = prepareBootstrap(project, manifest, assignments, 1);
+  const mara = nextProject.actors.find((a) => a.id === 'actor_mara');
+  assert.equal(mara?.current_state, undefined);
+  assert.notEqual(mara?.current_state?.emotion, 'neutral');
+}
+
+function testBootstrapUnknownObjectConditionIsNotAuthoredIntact() {
+  const { project, manifest, assignments } = standardApprovedFixture();
+  const { nextProject } = prepareBootstrap(project, manifest, assignments, 1);
+  const key = nextProject.objects.find((o) => o.id === 'object_key');
+  assert.ok(key);
+  assert.equal(key?.status, undefined, 'no status at all -- not present-and-"intact"');
+  assert.notEqual(key?.status, 'intact');
+}
+
+function testExistingDemoStateRemainsUnchanged() {
+  // The optional-field widening must not affect any project that already
+  // supplies real values -- all three demo projects have explicit, evidenced
+  // current_state/status on every actor/object.
+  for (const project of DEFAULT_PROJECTS) {
+    for (const actor of project.actors) {
+      assert.notEqual(actor.current_state, undefined, `${project.id}/${actor.id} must keep its real current_state`);
+    }
+    for (const object of project.objects) {
+      assert.notEqual(object.status, undefined, `${project.id}/${object.id} must keep its real status`);
+    }
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Possession reciprocity
+// ---------------------------------------------------------------------------
+
+function testAdmittedHolderProducesInternallyConsistentPossessionState() {
+  const { project, manifest, assignments } = standardApprovedFixture();
+  const { nextProject } = prepareBootstrap(project, manifest, assignments, 1);
+  const mara = nextProject.actors.find((a) => a.id === 'actor_mara');
+  const key = nextProject.objects.find((o) => o.id === 'object_key');
+  assert.equal(key?.current_holder_id, 'actor_mara');
+  assert.ok(mara?.possessions.includes('object_key'),
+    'the two canonical representations of possession (object.current_holder_id and actor.possessions) must agree');
+}
+
+function testUnheldObjectLeavesPossessionsUntouched() {
+  const project = sourceOnlyProject();
+  const doc = firstDoc(project);
+  let manifest = buildBootstrapManifest(project, {
+    entries: [
+      entry(locationProposal('location_well', 'the old well'), [evidenceFor(doc, 'u1', 'the old well')]),
+      entry(actorProposal('actor_mara', 'Mara', { initial_location_id: 'location_well' }), [evidenceFor(doc, 'u2', 'Mara')]),
+      entry(objectProposal('object_key', 'a brass key'), [evidenceFor(doc, 'u3', 'brass key')]), // no initial_holder_actor_id
+    ],
+  });
+  manifest = decideAllSupported(manifest);
+  const { nextProject } = prepareBootstrap(project, manifest, { activePovActorId: 'actor_mara', currentLocationId: 'location_well' }, 1);
+  const mara = nextProject.actors.find((a) => a.id === 'actor_mara');
+  const key = nextProject.objects.find((o) => o.id === 'object_key');
+  assert.equal(key?.current_holder_id, null);
+  assert.deepEqual(mara?.possessions, []);
+}
+
+function testMultipleObjectsFromTheSameHolderAreAllReciprocated() {
+  const project = sourceOnlyProject();
+  const doc = firstDoc(project);
+  let manifest = buildBootstrapManifest(project, {
+    entries: [
+      entry(locationProposal('location_well', 'the old well'), [evidenceFor(doc, 'u1', 'the old well')]),
+      entry(actorProposal('actor_mara', 'Mara', { initial_location_id: 'location_well' }), [evidenceFor(doc, 'u2', 'Mara')]),
+      entry(objectProposal('object_key', 'a brass key', { initial_holder_actor_id: 'actor_mara' }), [evidenceFor(doc, 'u3', 'brass key')]),
+      entry(objectProposal('object_lantern', 'a lantern', { initial_holder_actor_id: 'actor_mara' }), [evidenceFor(doc, 'u4', 'well')]),
+    ],
+  });
+  manifest = decideAllSupported(manifest);
+  const { nextProject } = prepareBootstrap(project, manifest, { activePovActorId: 'actor_mara', currentLocationId: 'location_well' }, 1);
+  const mara = nextProject.actors.find((a) => a.id === 'actor_mara');
+  assert.deepEqual([...(mara?.possessions ?? [])].sort(), ['object_key', 'object_lantern']);
+}
+
+// ---------------------------------------------------------------------------
+// POV / current-location coherence
+// ---------------------------------------------------------------------------
+
+function testBootstrapCompletesPovActorLocationFromAssignmentWhenUnestablished() {
+  const project = sourceOnlyProject();
+  const doc = firstDoc(project);
+  let manifest = buildBootstrapManifest(project, {
+    entries: [
+      entry(locationProposal('location_well', 'the old well'), [evidenceFor(doc, 'u1', 'the old well')]),
+      entry(actorProposal('actor_mara', 'Mara'), [evidenceFor(doc, 'u2', 'Mara')]), // no initial_location_id
+    ],
+  });
+  manifest = decideAllSupported(manifest);
+  const { nextProject } = prepareBootstrap(project, manifest, { activePovActorId: 'actor_mara', currentLocationId: 'location_well' }, 1);
+  const mara = nextProject.actors.find((a) => a.id === 'actor_mara');
+  assert.equal(mara?.current_location_id, 'location_well',
+    'completing the POV actor\'s own unestablished location from the assignment finishes one decision, not a fabrication');
+}
+
+function testBootstrapCannotReturnContradictoryPovCurrentLocationState() {
+  const project = sourceOnlyProject();
+  const doc = firstDoc(project);
+  let manifest = buildBootstrapManifest(project, {
+    entries: [
+      entry(locationProposal('location_well', 'the old well'), [evidenceFor(doc, 'u1', 'the old well')]),
+      entry(locationProposal('location_ridge', 'the high ridge'), [evidenceFor(doc, 'u2', 'brass key')]),
+      entry(actorProposal('actor_mara', 'Mara', { initial_location_id: 'location_well' }), [evidenceFor(doc, 'u3', 'Mara')]),
+    ],
+  });
+  manifest = decideAllSupported(manifest);
+  const before = JSON.parse(JSON.stringify(project));
+  assert.throws(
+    () => prepareBootstrap(project, manifest, { activePovActorId: 'actor_mara', currentLocationId: 'location_ridge' }, 1),
+    /scene\/actor location contradiction/i,
+  );
+  assert.deepEqual(project, before, 'a rejected-for-contradiction bootstrap must not mutate the input project');
+}
+
+function testBootstrapAcceptsCoherentPovAndCurrentLocation() {
+  const { project, manifest, assignments } = standardApprovedFixture();
+  const { nextProject } = prepareBootstrap(project, manifest, assignments, 1);
+  const mara = nextProject.actors.find((a) => a.id === 'actor_mara');
+  assert.equal(mara?.current_location_id, nextProject.currentPosition.location_id);
 }
 
 // ---------------------------------------------------------------------------
@@ -976,6 +1134,18 @@ function run() {
   testUnsupportedRejectedIsHarmlessAndCommitProceeds();
   testUnsupportedApprovedFailsUnsupportedCategoryAdmission();
   testUnsupportedEditedFailsUnsupportedCategoryAdmission();
+  testBootstrapUnknownFatigueIsNotAuthoredFatigueZero();
+  testBootstrapUnknownFearIsNotAuthoredFearZero();
+  testBootstrapUnknownCertaintyIsNotAuthoredCertaintyMidpoint();
+  testBootstrapUnknownEmotionIsNotAuthoredNeutral();
+  testBootstrapUnknownObjectConditionIsNotAuthoredIntact();
+  testExistingDemoStateRemainsUnchanged();
+  testAdmittedHolderProducesInternallyConsistentPossessionState();
+  testUnheldObjectLeavesPossessionsUntouched();
+  testMultipleObjectsFromTheSameHolderAreAllReciprocated();
+  testBootstrapCompletesPovActorLocationFromAssignmentWhenUnestablished();
+  testBootstrapCannotReturnContradictoryPovCurrentLocationState();
+  testBootstrapAcceptsCoherentPovAndCurrentLocation();
   console.log('bootstrap manifest authority regression passed');
 }
 
