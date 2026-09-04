@@ -249,13 +249,13 @@ function applyActorProposal(
     },
     roles: { story: [], scene: [] },
     traits: {},
-    // fatigue/fear default to the floor (0.0), not a small positive value: the
-    // source text gives no evidence a bootstrapped actor is tired or afraid at
-    // all, and any value above the floor would assert exactly that. certainty
-    // (0.5, the scale's midpoint) and emotion ('neutral') are the genuinely
-    // uninformative-prior/no-specific-state choices for their own fields --
-    // see BOOTSTRAP_MANIFEST_ENGINEERING_REPORT.md's canonical-value audit.
-    current_state: { fatigue: 0.0, fear: 0.0, certainty: 0.5, emotion: 'neutral' },
+    // current_state is omitted entirely, not defaulted. Any number/string here
+    // -- 0, 0.5, 'neutral', anything -- is a narrative claim about this
+    // actor's fatigue/fear/certainty/emotion that the source text gives no
+    // evidence for, and it would reach the writing model verbatim (see
+    // narrativePipeline.ts's "POV Current State" prompt line and the full
+    // GenerationContext dump in Stage 1). Absence is the only honest
+    // representation until real state evidence exists (a later slice).
     active_goals: [],
     current_location_id: locationId,
     possessions: [],
@@ -302,7 +302,12 @@ function applyObjectProposal(
     },
     current_holder_id: holderId,
     current_location_id: locationId,
-    status: 'intact',
+    // status is omitted entirely, not defaulted to 'intact'. Object condition
+    // is an unambiguous in-world physical claim -- unlike current_state's
+    // certainty/emotion, there is no defensible "neutral" reading of a
+    // condition enum, and this value is what RelationalGraph.tsx shows the
+    // author verbatim as "STATUS: <value>" and what the generation context
+    // exposes as an involved entity's roleOrStatus.
     salience: 0.5,
     isPresent: true,
   };
@@ -386,6 +391,79 @@ function applyEntityProposal(
 }
 
 /**
+ * StoryProject represents "actor holds object" twice: ObjectEntity.current_holder_id
+ * (actor id) and ActorEntity.possessions (object ids), read independently
+ * downstream (RelationalGraph.tsx and contextCompiler.ts's
+ * GenerationContext.activePovActor.possessions both read possessions[]
+ * directly; nothing derives it from current_holder_id). Applying an admitted
+ * object's initial_holder_actor_id only ever wrote the first side, leaving
+ * the two representations of one fact in contradiction. This closes that
+ * gap for every object in the resulting draft, additively (only ever adds a
+ * missing id, never removes one), after all entity proposals have been
+ * applied so every admitted actor/object already exists in `draft`.
+ *
+ * Note: src/lib/preparePromotion.ts's applyAdmittedPossessionChanges has the
+ * same one-sided gap for ordinary (non-bootstrap) possession transfers.
+ * That is a recorded, separate defect -- out of scope for B1, not
+ * reproduced here on purpose.
+ */
+function synchronizePossessionReciprocity(draft: StoryProject, descriptions: string[]): void {
+  for (const object of draft.objects) {
+    if (object.current_holder_id === null) continue;
+    const holder = draft.actors.find((actor) => actor.id === object.current_holder_id);
+    if (!holder) {
+      // Unreachable given every current_holder_id was already proven to
+      // resolve to an admitted or pre-existing actor before being written;
+      // fail closed rather than leave a one-sided, contradictory possession
+      // claim in the resulting project if that invariant is ever violated.
+      throw new Error(
+        `Bootstrap possession coherence failed: object ${object.id} claims holder ${object.current_holder_id}, `
+        + 'but no such actor exists in the resulting project',
+      );
+    }
+    if (!holder.possessions.includes(object.id)) {
+      holder.possessions.push(object.id);
+      descriptions.push(`Synchronized possession: ${holder.id} canonically holds ${object.id}`);
+    }
+  }
+}
+
+/**
+ * The active POV actor's own current_location_id and the transaction's
+ * chosen currentLocationId are two representations of the same fact --
+ * "where the story is currently happening, and to whom". If the POV actor
+ * has no admitted location yet ('' from Manuscript Intake's convention),
+ * completing it to match the assignment finishes the single decision the
+ * author already made by choosing both the POV actor and the scene location
+ * together; it is not a new, separately-unearned claim. If the actor
+ * already has a *different* admitted location, that is a genuine
+ * contradiction bootstrap must never silently resolve by picking one side.
+ */
+function enforcePovActorLocationCoherence(
+  draft: StoryProject,
+  povActorId: string,
+  currentLocationId: string,
+): void {
+  const povActor = draft.actors.find((actor) => actor.id === povActorId);
+  if (!povActor) {
+    // Unreachable: povActorId was already proven to resolve to an admitted actor.
+    throw new Error(`Bootstrap POV coherence failed: assigned POV actor ${povActorId} is not present in the resulting project`);
+  }
+  if (povActor.current_location_id === '') {
+    povActor.current_location_id = currentLocationId;
+    return;
+  }
+  if (povActor.current_location_id !== currentLocationId) {
+    throw new Error(
+      `Bootstrap scene/actor location contradiction: the current location assignment is ${currentLocationId}, `
+      + `but the admitted POV actor ${povActorId} has its own location ${povActor.current_location_id}. `
+      + 'Resolve this explicitly -- edit the actor\'s initial_location_id or choose a different location assignment -- '
+      + 'rather than let bootstrap silently pick one.',
+    );
+  }
+}
+
+/**
  * Atomically converts a decided BootstrapManifest into a project's initial
  * structured state. Pure: never mutates `project`, `manifest`, or any
  * evidence/proposal object reachable from them; on any failure the caller's
@@ -432,6 +510,8 @@ export function prepareBootstrap(
     admittedByEntry.set(entry.id, structuredClone(proposal));
   }
 
+  synchronizePossessionReciprocity(draft, appliedDescriptions);
+
   if (assignments.activePovActorId === null || assignments.currentLocationId === null) {
     throw new Error('Bootstrap requires an explicit POV actor assignment and current location assignment; neither is inferred');
   }
@@ -459,6 +539,8 @@ export function prepareBootstrap(
     // resolves to a location kind that now exists in draft; defensive only.
     throw new Error(`Bootstrap location assignment resolved to ${currentLocationId} but it is not present in the resulting project`);
   }
+  enforcePovActorLocationCoherence(draft, povActorId, currentLocationId);
+
   draft.currentPosition = {
     ...draft.currentPosition,
     location_id: currentLocationId,

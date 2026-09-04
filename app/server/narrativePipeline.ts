@@ -215,6 +215,13 @@ STRICT RENDERING DIRECTIVES:
     ? JSON.stringify(renderingEnvelope.rewriteContract, null, 2)
     : 'None';
 
+  // Omit the POV Current State line entirely when unestablished, rather than
+  // render `undefined`/an empty object as if it were an authored fact. Never
+  // substitute a placeholder value here.
+  const povCurrentStateLine = pov.currentState
+    ? `\n- POV Current State: ${JSON.stringify(pov.currentState)}`
+    : '';
+
   const userPrompt = `TASK: Render Prose for ${op}
 
 APPROVED STAGE 1 PLAN:
@@ -228,8 +235,7 @@ ${codexFormatted || 'No accumulated codex entities in scope.'}
 
 AUTHORIZED RENDERING EVIDENCE:
 - Active POV: ${pov.displayName} (${pov.id})
-- POV Traits: ${JSON.stringify(pov.traits)}
-- POV Current State: ${JSON.stringify(pov.currentState)}
+- POV Traits: ${JSON.stringify(pov.traits)}${povCurrentStateLine}
 - Current Location: ${renderingEnvelope.currentLocation
   ? `${renderingEnvelope.currentLocation.displayName} (${renderingEnvelope.currentLocation.id}): ${renderingEnvelope.currentLocation.description}`
   : 'Local area'}

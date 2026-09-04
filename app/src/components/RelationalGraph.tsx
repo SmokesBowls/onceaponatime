@@ -25,6 +25,13 @@ import {
   FactionEntity,
   MentionRecord,
 } from '../types';
+import {
+  describeActorEmotion,
+  describeActorFatigue,
+  describeActorFear,
+  describeObjectStatus,
+  objectStatusBadgeTone,
+} from '../lib/entityStateDisplay';
 
 interface RelationalGraphProps {
   project: StoryProject;
@@ -257,7 +264,7 @@ export const RelationalGraph: React.FC<RelationalGraphProps> = ({
                     <div className="text-sm font-serif font-bold">
                       {obj.identity.name || obj.identity.working_label}
                     </div>
-                    <div className={`text-[10px] font-sans uppercase tracking-wider mt-0.5 ${selectedEntityId === obj.id ? 'text-white/70' : 'text-[#736B63]'}`}>Status: {obj.status}</div>
+                    <div className={`text-[10px] font-sans uppercase tracking-wider mt-0.5 ${selectedEntityId === obj.id ? 'text-white/70' : 'text-[#736B63]'}`}>Status: {describeObjectStatus(obj)}</div>
                   </div>
                   <ChevronRight className={`h-4 w-4 ${selectedEntityId === obj.id ? 'text-white' : 'text-[#736B63]'}`} />
                 </button>
@@ -355,15 +362,15 @@ export const RelationalGraph: React.FC<RelationalGraphProps> = ({
                   <div className="space-y-1.5 text-xs font-sans">
                     <div className="flex items-center justify-between">
                       <span className="text-[#736B63]">Fatigue:</span>
-                      <span className="font-bold text-[#1A1A1A]">{(activeActor.current_state.fatigue * 100).toFixed(0)}%</span>
+                      <span className="font-bold text-[#1A1A1A]">{describeActorFatigue(activeActor)}</span>
                     </div>
                     <div className="flex items-center justify-between">
                       <span className="text-[#736B63]">Fear:</span>
-                      <span className="font-bold text-[#1A1A1A]">{(activeActor.current_state.fear * 100).toFixed(0)}%</span>
+                      <span className="font-bold text-[#1A1A1A]">{describeActorFear(activeActor)}</span>
                     </div>
                     <div>
                       <span className="text-[#736B63]">Emotion:</span>{' '}
-                      <span className="text-[#1A1A1A] font-serif italic font-semibold">{activeActor.current_state.emotion}</span>
+                      <span className="text-[#1A1A1A] font-serif italic font-semibold">{describeActorEmotion(activeActor)}</span>
                     </div>
                   </div>
                 </div>
@@ -449,14 +456,16 @@ export const RelationalGraph: React.FC<RelationalGraphProps> = ({
                 </div>
                 <span
                   className={`text-[10px] font-sans uppercase tracking-wider font-bold px-2.5 py-1 rounded ${
-                    activeObject.status === 'missing'
+                    objectStatusBadgeTone(activeObject) === 'warning'
                       ? 'bg-[#966F33] text-[#FDFCF8]'
-                      : activeObject.status === 'destroyed'
+                      : objectStatusBadgeTone(activeObject) === 'danger'
                       ? 'bg-[#8B263E] text-[#FDFCF8]'
+                      : objectStatusBadgeTone(activeObject) === 'unestablished'
+                      ? 'bg-[#E5E2D9] text-[#5A554E]'
                       : 'bg-[#2D5A27] text-[#FDFCF8]'
                   }`}
                 >
-                  Status: {activeObject.status.toUpperCase()}
+                  Status: {describeObjectStatus(activeObject)}
                 </span>
               </div>
 

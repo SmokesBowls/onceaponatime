@@ -169,7 +169,16 @@ export interface ActorEntity {
     scene: string[]; // e.g. ["interrogator", "observer"]
   };
   traits: Record<string, number | string>; // e.g. { protective: 0.8, trusting: 0.3 }
-  current_state: {
+  /**
+   * Absent means genuinely unestablished -- no fatigue/fear/certainty/emotion
+   * evidence exists yet. Never fill this with a placeholder number/string to
+   * satisfy a caller; 0/0.5/'neutral' are narrative claims a reader or a
+   * generation model cannot distinguish from authored fact. Downstream
+   * readers (GenerationContext, Stage2RenderingEnvelope, prompt rendering,
+   * RelationalGraph.tsx) must all treat absence as "not established", never
+   * substitute a default of their own.
+   */
+  current_state?: {
     fatigue: number;
     fear: number;
     certainty: number;
@@ -196,7 +205,8 @@ export interface ObjectEntity {
   identity: EntityIdentity;
   current_holder_id: string | null; // actor_id or null
   current_location_id: string | null;
-  status: 'intact' | 'damaged' | 'destroyed' | 'missing';
+  /** Absent means genuinely unestablished physical condition -- see ActorEntity.current_state for the same convention and why. */
+  status?: 'intact' | 'damaged' | 'destroyed' | 'missing';
   salience: number; // 0.0 to 1.0 based on mentions & connections
   isPresent: boolean;
   reliability?: number;
@@ -346,7 +356,7 @@ export interface GenerationContext {
     identity: EntityIdentity;
     roles: { story: string[]; scene: string[] };
     traits: Record<string, number | string>;
-    current_state: { fatigue: number; fear: number; certainty: number; emotion: string };
+    current_state?: { fatigue: number; fear: number; certainty: number; emotion: string };
     active_goals: string[];
     current_location_id: string;
     possessions: string[];
@@ -453,7 +463,8 @@ export interface Stage2RenderingEnvelope {
     id: string;
     displayName: string;
     traits: Record<string, number | string>;
-    currentState: {
+    /** Absent means unestablished; narrativePipeline.ts must omit the "POV Current State" prompt line entirely rather than render it as e.g. "undefined". */
+    currentState?: {
       fatigue: number;
       fear: number;
       certainty: number;

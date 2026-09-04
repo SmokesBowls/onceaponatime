@@ -233,6 +233,19 @@ function applyActorStateChange(
   if (!actor) {
     throw new Error(`Actor-state transition precondition failed: unknown actor ${proposal.actor_id}`);
   }
+  // An actor admitted with no current_state (e.g. a Bootstrap Manifest
+  // actor -- see BOOTSTRAP_MANIFEST_ENGINEERING_REPORT.md) has none to
+  // mutate. This is the first point real narrative evidence (an accepted
+  // beat's actor-state change) actually exists for this actor, so
+  // materializing a baseline here is not the same fabrication bootstrap was
+  // fixed to avoid -- it is required structurally (the field is not
+  // per-field-optional) and only touched once real evidence exists for at
+  // least one of its fields. The untouched sibling fields still start at the
+  // least-assertive floor/neutral values, which remains an imperfect,
+  // deliberately out-of-scope-for-B1 corner: recorded, not fixed, here.
+  if (!actor.current_state) {
+    actor.current_state = { fatigue: 0, fear: 0, certainty: 0.5, emotion: 'neutral' };
+  }
   if (proposal.fatigue_delta !== undefined) {
     actor.current_state.fatigue = Math.min(
       1,
@@ -395,9 +408,15 @@ function buildTemporalSnapshot(
 
   const actorStates: Record<string, { fatigue: number; emotion: string }> = {};
   for (const actor of draft.actors) {
+    // TemporalSnapshot.actor_states is a point-in-time historical ledger,
+    // currently written but never read by any UI (verified: no component
+    // consumes it as of this change). Falling back here for an actor with no
+    // current_state (e.g. an unmodified Bootstrap Manifest actor) only
+    // affects that unread record, never the actor's own live current_state
+    // -- it must not be read as evidence the actor's state is actually known.
     actorStates[actor.id] = {
-      fatigue: actor.current_state.fatigue,
-      emotion: actor.current_state.emotion,
+      fatigue: actor.current_state?.fatigue ?? 0,
+      emotion: actor.current_state?.emotion ?? 'neutral',
     };
   }
 

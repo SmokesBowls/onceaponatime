@@ -611,7 +611,13 @@ export function compileStage2RenderingEnvelope(
         || generationContext.activePovActor.identity.working_label
         || generationContext.activePovActor.id,
       traits: { ...generationContext.activePovActor.traits },
-      currentState: { ...generationContext.activePovActor.current_state },
+      // `{...undefined}` silently evaluates to `{}` in JS, which would turn
+      // "unestablished" into an empty-but-present object -- indistinguishable
+      // from "established, with no fields" rather than "not established at
+      // all". Preserve absence explicitly instead.
+      currentState: generationContext.activePovActor.current_state
+        ? { ...generationContext.activePovActor.current_state }
+        : undefined,
     },
     currentLocation: generationContext.currentLocation
       ? {

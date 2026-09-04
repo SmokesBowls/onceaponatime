@@ -309,6 +309,13 @@ export default function App() {
       for (const stChange of stateChanges.actor_state_changes || []) {
         const actor = updatedActors.find((a) => a.id === stChange.actor_id);
         if (actor) {
+          // An actor admitted with no current_state (e.g. from Bootstrap
+          // Manifest) has none to mutate -- this accepted beat is the first
+          // real evidence for it. See preparePromotion.ts::applyActorStateChange
+          // for the same guard and its caveat.
+          if (!actor.current_state) {
+            actor.current_state = { fatigue: 0, fear: 0, certainty: 0.5, emotion: 'neutral' };
+          }
           if (typeof stChange.fatigue_delta === 'number') {
             actor.current_state.fatigue = Math.min(1.0, Math.max(0.0, actor.current_state.fatigue + stChange.fatigue_delta));
           }
@@ -359,9 +366,13 @@ export default function App() {
 
       const actorStatesMap: Record<string, { fatigue: number; emotion: string }> = {};
       for (const a of updatedActors) {
+        // TemporalSnapshot.actor_states is a currently-unread historical
+        // ledger; see preparePromotion.ts::buildTemporalSnapshot for the
+        // same fallback and why it does not affect the actor's own live
+        // current_state.
         actorStatesMap[a.id] = {
-          fatigue: a.current_state.fatigue,
-          emotion: a.current_state.emotion,
+          fatigue: a.current_state?.fatigue ?? 0,
+          emotion: a.current_state?.emotion ?? 'neutral',
         };
       }
 
