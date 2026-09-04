@@ -870,6 +870,64 @@ function testBootstrappedActorCarriesNoUnearnedStateClaim() {
   assert.equal(mara?.current_state.fear, 0, 'fear must default to the floor, not a small positive claim');
 }
 
+// ---------------------------------------------------------------------------
+// Pending vs. rejected for unsupported categories: pending means "the author
+// has not decided" and must block commit exactly like a pending supported
+// entry does; only an explicit rejected is harmless. This is a deliberate
+// divergence from Promotion Manifest's precedent (recorded, not copied) --
+// see BOOTSTRAP_MANIFEST_ENGINEERING_REPORT.md.
+// ---------------------------------------------------------------------------
+
+function unsupportedFixture() {
+  const { project, manifest: baseManifest, assignments } = standardApprovedFixture();
+  const withFact = buildBootstrapManifest(project, {
+    entries: [
+      ...entriesOfKind(baseManifest, 'location_proposal').map((e) => entry(e.proposed, e.evidence)),
+      ...entriesOfKind(baseManifest, 'actor_proposal').map((e) => entry(e.proposed, e.evidence)),
+      ...entriesOfKind(baseManifest, 'object_proposal').map((e) => entry(e.proposed, e.evidence)),
+      entry(factProposal('the well is haunted'), [evidenceFor(firstDoc(project), 'ufact', 'old well')]),
+    ],
+  });
+  const decidedSupported = decideAllSupported(withFact);
+  return { project, manifest: decidedSupported, assignments, factEntryId: entriesOfKind(decidedSupported, 'fact_proposal')[0].id };
+}
+
+function testUnsupportedPendingBlocksCommit() {
+  const { project, manifest, assignments } = unsupportedFixture();
+  // fact_proposal entry is left at its default 'pending' decision.
+  assert.equal(entriesOfKind(manifest, 'fact_proposal')[0].decision, 'pending');
+  assert.throws(
+    () => prepareBootstrap(project, manifest, assignments, 1),
+    /pending unsupported/i,
+  );
+}
+
+function testUnsupportedRejectedIsHarmlessAndCommitProceeds() {
+  const { project, manifest, assignments, factEntryId } = unsupportedFixture();
+  const decided = decideBootstrapManifestEntry(manifest, factEntryId, 'rejected');
+  const { nextProject } = prepareBootstrap(project, decided, assignments, 1);
+  assert.deepEqual(nextProject.facts, []);
+  assert.ok(assessCompositionReadiness(nextProject).ready);
+}
+
+function testUnsupportedApprovedFailsUnsupportedCategoryAdmission() {
+  const { project, manifest, assignments, factEntryId } = unsupportedFixture();
+  const decided = decideBootstrapManifestEntry(manifest, factEntryId, 'approved');
+  assert.throws(
+    () => prepareBootstrap(project, decided, assignments, 1),
+    /Unsupported Bootstrap Manifest entry cannot be admitted/,
+  );
+}
+
+function testUnsupportedEditedFailsUnsupportedCategoryAdmission() {
+  const { project, manifest, assignments, factEntryId } = unsupportedFixture();
+  const decided = decideBootstrapManifestEntry(manifest, factEntryId, 'edited', factProposal('the well is definitely haunted'));
+  assert.throws(
+    () => prepareBootstrap(project, decided, assignments, 1),
+    /Unsupported Bootstrap Manifest entry cannot be admitted/,
+  );
+}
+
 function run() {
   testSupportedCategoryMatrix();
   testManifestCreationIsPure();
@@ -914,6 +972,10 @@ function run() {
   testTamperedEvidenceExactTextFailsClosed();
   testFreshnessCheckedForFingerprintOnlyIsInsufficient();
   testBootstrappedActorCarriesNoUnearnedStateClaim();
+  testUnsupportedPendingBlocksCommit();
+  testUnsupportedRejectedIsHarmlessAndCommitProceeds();
+  testUnsupportedApprovedFailsUnsupportedCategoryAdmission();
+  testUnsupportedEditedFailsUnsupportedCategoryAdmission();
   console.log('bootstrap manifest authority regression passed');
 }
 

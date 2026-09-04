@@ -63,16 +63,33 @@ function failWrongProposal(entry: BootstrapManifestEntry): never {
   throw new Error(`Malformed Bootstrap Manifest proposal kind for ${entry.id}`);
 }
 
-/** Mirrors src/lib/preparePromotion.ts::admittedProposal exactly (same three-way rule, different domain). */
+/**
+ * Deliberately stricter than src/lib/preparePromotion.ts::admittedProposal
+ * here: Promotion Manifest lets an unsupported entry sit pending forever,
+ * treating "never decided" the same as "rejected". B1 does not -- pending
+ * means "the author has not decided", which is a different fact than
+ * "explicitly do not admit", and bootstrap is establishing a project's
+ * initial structured world, not reviewing an incremental delta against
+ * already-canonical state. So every pending entry blocks commit here,
+ * supported or unsupported; the only way an unsupported proposal becomes
+ * harmless at commit time is an explicit `rejected`. This is a recorded,
+ * deliberate cross-domain inconsistency with Promotion Manifest, not an
+ * oversight -- see BOOTSTRAP_MANIFEST_ENGINEERING_REPORT.md.
+ */
 function admittedProposal(entry: BootstrapManifestEntry): BootstrapProposal | undefined {
+  if (entry.decision === 'pending') {
+    throw new Error(
+      entry.supportedForApplication
+        ? `Pending supported Bootstrap Manifest entry cannot bootstrap: ${entry.id}`
+        : `Pending unsupported Bootstrap Manifest entry cannot bootstrap: ${entry.id} `
+          + '(an unsupported proposal must be explicitly rejected, not merely left undecided)',
+    );
+  }
   if (!entry.supportedForApplication) {
     if (entry.decision === 'approved' || entry.decision === 'edited') {
       throw new Error(`Unsupported Bootstrap Manifest entry cannot be admitted: ${entry.id}`);
     }
-    return undefined;
-  }
-  if (entry.decision === 'pending') {
-    throw new Error(`Pending supported Bootstrap Manifest entry cannot bootstrap: ${entry.id}`);
+    return undefined; // rejected: the only terminal, harmless decision for an unsupported entry
   }
   if (entry.decision === 'rejected') return undefined;
   if (entry.decision === 'approved') return entry.proposed;
