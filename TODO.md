@@ -405,6 +405,16 @@ or `assessBootstrapReviewReadiness()` (a richer result carrying which of items 1
 any, mirroring `assessCompositionReadiness()`'s existing shape elsewhere in this codebase).
 Either way: **review complete is not the same claim as canonical admission valid.**
 
+**Second origin finding.** Determining whether an assignment id "resolves to an admitted entry
+of the correct kind" (items 8, 9, 14, 15) requires the exact same per-entry admission logic
+`prepareBootstrap.ts`'s private `admittedProposal()` already implements (decision ->
+proposed/admitted/undefined, including the unsupported-entry throw). Reimplementing that
+resolution independently in the new readiness predicate would create exactly the kind of
+duplicate-authority drift B2/B3a were built to avoid. `admittedProposal()` should be exported
+(e.g. renamed `resolveAdmittedBootstrapProposal()`) so both `prepareBootstrap()` and the new
+readiness predicate call the identical function -- the readiness predicate catching whatever it
+throws and treating that as "does not resolve," never letting the exception escape a pure query.
+
 #### B3c hard non-goals
 
 - No `prepareBootstrap()` call, canonical admission, receipt, or mutation; those belong to B3d.
