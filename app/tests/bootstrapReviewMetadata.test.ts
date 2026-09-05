@@ -178,6 +178,10 @@ function testMalformedConfidenceIsRejectedWhenPresent() {
       value: { classification: 'provisional', supportingUnitCount: -1, reasons: ['proper_name_match'] },
     },
     {
+      label: 'zero count',
+      value: { classification: 'provisional', supportingUnitCount: 0, reasons: ['proper_name_match'] },
+    },
+    {
       label: 'non-integer count',
       value: { classification: 'provisional', supportingUnitCount: 1.5, reasons: ['proper_name_match'] },
     },
@@ -252,23 +256,36 @@ function testSupportingCountUsesDistinctEvidenceUnitIdentity() {
     entries: [{ ...duplicateEvidenceEntry, discoveryConfidence: confidence('provisional', 2) }],
   });
   assert.throws(() => validateBootstrapManifestStructure(wrongCount), /supportingUnitCount|distinct/i);
+
+  const undercount = buildBootstrapManifest(twoUnitProject, {
+    entries: [{ ...twoDistinctUnits, discoveryConfidence: confidence('provisional', 1) }],
+  });
+  assert.throws(() => validateBootstrapManifestStructure(undercount), /supportingUnitCount|distinct/i);
 }
 
 function testConfidenceParticipatesInReviewArtifactFingerprint() {
   const project = sourceOnlyProject('Keen entered Ironspire.');
-  const first = buildBootstrapManifest(project, {
+  const baseline = buildBootstrapManifest(project, {
     entries: manualEntries(project, confidence('provisional', 1), confidence()),
   });
-  const second = buildBootstrapManifest(project, {
+  const changedReasons = buildBootstrapManifest(project, {
     entries: manualEntries(project, confidence('provisional', 1, ['person_context_match']), confidence()),
   });
+  const changedClassification = buildBootstrapManifest(project, {
+    entries: manualEntries(project, confidence('ambiguous', 1), confidence()),
+  });
+  const changedCount = buildBootstrapManifest(project, {
+    entries: manualEntries(project, confidence('provisional', 2), confidence()),
+  });
 
-  assert.notEqual(first.entriesFingerprint, second.entriesFingerprint);
-  assert.notEqual(first.id, second.id);
+  for (const changed of [changedReasons, changedClassification, changedCount]) {
+    assert.notEqual(baseline.entriesFingerprint, changed.entriesFingerprint);
+    assert.notEqual(baseline.id, changed.id);
+  }
 }
 
 function testB3aPreservesClassificationWithoutReinterpretingCount() {
-  const project = sourceOnlyProject('Keen entered Ironspire.');
+  const project = sourceOnlyProject('Keen entered Ironspire.\n\nKeen waited.');
   const classifications: BootstrapDiscoveryConfidence['classification'][] = [
     'ambiguous',
     'provisional',
@@ -276,14 +293,22 @@ function testB3aPreservesClassificationWithoutReinterpretingCount() {
   ];
 
   for (const classification of classifications) {
-    const supplied = confidence(classification, 1, ['proper_name_match']);
+    const supplied = confidence(classification, 2, ['proper_name_match', 'repeated_identity_reference']);
+    const entry: BootstrapDiscoveryEntry = {
+      proposed: actorProposal(),
+      evidence: [
+        exactEvidence(project, 'classification-unit-one', 'Keen entered Ironspire.'),
+        exactEvidence(project, 'classification-unit-two', 'Keen waited.'),
+      ],
+      discoveryConfidence: supplied,
+    };
     const manifest = buildBootstrapManifest(project, {
-      entries: manualEntries(project, supplied, confidence()),
+      entries: [entry],
     });
     const actorEntry = manifest.entries.find((entry) => entry.kind === 'actor_proposal');
 
     assert.equal(actorEntry?.discoveryConfidence?.classification, classification);
-    assert.equal(actorEntry?.discoveryConfidence?.supportingUnitCount, 1);
+    assert.equal(actorEntry?.discoveryConfidence?.supportingUnitCount, 2);
     assert.doesNotThrow(() => validateBootstrapManifestStructure(manifest));
   }
 }
