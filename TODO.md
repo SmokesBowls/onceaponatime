@@ -208,6 +208,23 @@ Before production changes, commit focused failing tests proving:
 
 ## Recorded, deliberately deferred (found during review, out of scope where found)
 
+- **`src/lib/bootstrapDiscovery.ts`'s role-aware admission (`398033e`) has three known
+  coverage gaps**, all confirmed to fail closed (nothing promoted) rather than
+  reproducing the false-positive pattern the fix targeted:
+  - Compound subjects joined by a conjunction are only half-discovered — the
+    agentive-subject check inspects only the word immediately following each
+    candidate, so `"Isla and Keen entered Ironspire."` finds Keen but not Isla.
+  - Possessive/appositive attribution to a place is not recognized as location
+    evidence — `"Ironspire's eastern gate opened."` and `"The city of Ironspire
+    welcomed travelers..."` confirm nothing for Ironspire.
+  - Passive voice is not resolved — `"Ulric was seen by Keen."` attributes agency
+    to neither the grammatical subject (correctly, since it's not the semantic
+    agent) nor the true agent in the "by Keen" phrase (a genuine miss).
+  Each would require either scanning past a coordinating conjunction to a shared
+  verb, recognizing possessive/appositive place constructions, or resolving
+  passive-voice agent phrases — real parsing extensions, not adjacency-list
+  growth, and not required by the frozen grammatical-role contract. Deferred
+  rather than folded into that slice.
 - **`src/lib/preparePromotion.ts`'s `applyAdmittedPossessionChanges`** has the same
   one-sided possession-reciprocity gap B1's `prepareBootstrap.ts` was fixed to close
   (`object.current_holder_id` set without reciprocally updating `actor.possessions`).
