@@ -129,5 +129,21 @@ panel, Accept/Reject flow) — never started, out of scope for every slice since
 
 **Pushed to `origin/main` at `7008fd2`.**
 
-**Not yet done:** B3a (lossless discovery-metadata handoff into the Bootstrap Manifest), the
-remaining B3 structural-review/admission UI slices, and B4 optional AI refinement. See `TODO.md`.
+## B3a — Lossless Bootstrap Review Metadata Handshake
+
+- Frozen the review-metadata contract in `f5feb3d`, closed independent-review gaps in
+  `5c164b0`, and completed count/classification/fingerprint invariants in `56cafd8`.
+- GREEN (`c9faf14`) preserves B2 `discoveryConfidence` exactly into
+  `BootstrapManifestEntry` when supplied while keeping it genuinely optional for legitimate
+  manual/non-B2 entries.
+- Classification, exact distinct supporting-unit count, and deterministic reason IDs are
+  structurally validated and fully participate in manifest review-artifact identity.
+- Discovery rationale remains immutable through approve/edit/reject transitions and has no
+  admission, ranking, assignment, POV, location, or canonical-application authority.
+- Focused and adjacent regressions, canonical `npm test`, TypeScript lint, production build,
+  `git diff --check`, direct malformed/coercion probes, and final independent review passed.
+
+**Pushed to `origin/main` at `c9faf14`.**
+
+**Not yet done:** B3b read-only Structural Review presentation, B3c author decisions and
+assignments, B3d atomic admission, and B4 optional AI refinement. See `TODO.md`.

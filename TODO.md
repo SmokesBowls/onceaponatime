@@ -10,9 +10,11 @@ B1 authority + truthfulness closeout   ✅ done, pushed (c7815f9)
         ↓
 B2 — Deterministic Bootstrap Discovery  ✅ done, pushed (7008fd2)
         ↓
-B3a — Preserve B2 Review Metadata Through Bootstrap Manifest  ← next
+B3a — Preserve B2 Review Metadata Through Bootstrap Manifest  ✅ done, pushed (c9faf14)
         ↓
-B3b–B3d — Structural Review UI + Author Admission
+B3b — Read-Only Structural Review Presentation  ← next
+        ↓
+B3c–B3d — Author Decisions + Atomic Admission
         ↓
 B4 — Optional AI Refinement
 ```
@@ -91,6 +93,8 @@ Before production implementation, commit focused failing tests proving:
 
 ### B3a — Preserve B2 Review Metadata Through the Bootstrap Manifest Boundary
 
+**Shipped:** frozen RED contract through `56cafd8`; GREEN metadata handoff in `c9faf14`.
+
 B2 knows why a deterministic candidate was surfaced; B1 knows what the author decided.
 B3a closes the loss between those two records before any review UI is built:
 
@@ -140,14 +144,61 @@ Before production changes, commit focused failing tests proving:
 - No persistence/resume layer, AI/B4 work, Promotion Manifest changes, facts, relationships,
   schema expansion, or reinterpretation of B2 detector confidence.
 
-### B3b–B3d — Structural Review UI + Author Admission
-- The `BEGIN STRUCTURAL REVIEW` entry point in the "Composition Pipeline Unavailable"
-  panel (`src/components/StoryEditor.tsx`) — currently there is no button there at all;
-  this is the acknowledged UX dead end raised earlier and intentionally not stubbed out
-  ahead of B2/B3a.
-- Show proposals + evidence, approve/edit/reject per entry.
-- Explicit POV/current-location picker (never inferred) wired to `BootstrapAssignments`.
-- Commits through B1's `prepareBootstrap()` — no new authority logic here.
+### B3b — Read-Only Structural Review Presentation
+
+B3b closes the acknowledged UX dead end without changing authority or readiness:
+
+```text
+Composition Pipeline Unavailable
+        ↓ BEGIN STRUCTURAL REVIEW
+one deterministic BootstrapManifest review snapshot
+        ↓ read-only rendering
+proposal + separate exact evidence units + preserved discovery rationale
+        ↓ CLOSE REVIEW
+Composition Pipeline Unavailable
+```
+
+`BEGIN STRUCTURAL REVIEW` does not unlock composition. It means composition remains unavailable
+and exposes the structure that must be reviewed before it can become canonical. The existing
+`assessCompositionReadiness()` gate and its truthful locked heading remain unchanged.
+
+#### B3b RED gate
+
+Before production changes, commit focused failing tests proving:
+
+1. the locked panel exposes an explicit `BEGIN STRUCTURAL REVIEW` action only when substantive
+   source text exists and composition readiness is not established;
+2. opening review creates one deterministic snapshot by reading the existing B2 → B3a
+   `BootstrapManifest` path without mutating the project or changing composition readiness;
+3. every pending manifest entry renders in stable manifest order with proposal kind and working
+   label presented exactly, without React-side reinterpretation;
+4. every `SourceEvidenceUnit` remains separately visible with its preserved `exactText`, source
+   document ID, unit ID, and exact `[startOffset, endOffset)` span identity;
+5. optional discovery classification, supporting-unit count, and reason IDs render exactly from
+   `BootstrapManifestEntry.discoveryConfidence`, never recomputed from evidence in React;
+6. manual/non-B2 entries lacking confidence render an explicit honest absence without fabricating
+   a classification, support count, or reason;
+7. closing and reopening review from unchanged project/source input produces the same manifest
+   artifact and rendering, and neither operation mutates the snapshot or caller-owned input;
+8. the read-only surface exposes `CLOSE REVIEW` but no approve, edit, reject, POV, location,
+   assignment, apply, commit, or admission control;
+9. opening, rendering, closing, and reopening never call `prepareBootstrap()`, never change
+   project/canonical state, and never change composition readiness.
+
+#### B3b hard non-goals
+
+- No approve/edit/reject decisions; those belong to B3c.
+- No POV or current-location assignments; those belong to B3c.
+- No `prepareBootstrap()` call, canonical admission, receipt, or mutation; those belong to B3d.
+- No persistence/resume layer, AI/B4 work, confidence inference/ranking, schema expansion,
+  Promotion Manifest work, facts, relationships, threads, mysteries, or continuity auditing.
+
+### B3c–B3d — Author Decisions + Atomic Admission
+
+- B3c adds approve/edit/reject per entry and explicit POV/current-location assignment, never
+  inferred and always represented by B1's existing decision and `BootstrapAssignments` types.
+- B3d commits only a complete explicitly reviewed manifest through B1's atomic
+  `prepareBootstrap()` boundary and presents its receipt/error honestly.
 
 ### B4 — Optional AI Refinement
 - A Hermes operation (e.g. `onceaponatime.bootstrap.refine`), receipt-bearing, following
