@@ -239,12 +239,20 @@ explicit BootstrapAssignments
   POV actor
   current location
         ↓
-READY FOR B3d
+REVIEW COMPLETE
 ```
 
 B3c is the author-facing controller for the authority system B1 already built (`BootstrapDecision`,
 `decideBootstrapManifestEntry()`, `BootstrapAssignments`), not a new authority layer. It still does
 not call `prepareBootstrap()` -- that boundary, the receipt, and canonical admission belong to B3d.
+
+**Review complete is not the same claim as admission valid.** B3c can only ever establish that
+every entry has an explicit decision and both assignments explicitly resolve to an admitted entry
+of the correct kind. It does not, and cannot, predict whether `prepareBootstrap()` will actually
+succeed -- deeper domain validation (POV/location coherence, possession reciprocity, and whatever
+else `prepareBootstrap()` checks) remains exclusively B3d's to run and B3d may still legitimately
+return a domain error after review is complete. Naming and language throughout this section is
+chosen to keep that seam visible: "review complete," never "B3d-ready" or "ready to admit."
 
 #### B3c authority
 
@@ -256,13 +264,19 @@ MAY:
 - explicitly choose `BootstrapAssignments.activePovActorId`;
 - explicitly choose `BootstrapAssignments.currentLocationId`;
 - preserve the original discovery evidence and `discoveryConfidence` through every transition;
-- produce a reviewed `BootstrapManifest` + `BootstrapAssignments` artifact for B3d to consume.
+- produce a reviewed `BootstrapManifest` + `BootstrapAssignments` artifact once review is
+  complete, for B3d to attempt to admit -- completeness is not a success guarantee.
 
 MAY NOT:
 - infer POV;
 - infer current location;
 - auto-approve/auto-decide an entry based on `discoveryConfidence`, support count, or
   `corroborated` status;
+- render `APPROVE` or `EDIT` on an unsupported entry (`supportedForApplication: false`) --
+  `prepareBootstrap()` already throws on an unsupported entry decided `approved`/`edited`
+  (see `admittedProposal()` in `prepareBootstrap.ts`), so B3c must never offer a control that
+  invites an author into a decision B1 will refuse; an unsupported entry gets `REJECT` only;
+- claim or imply that "review complete" predicts or guarantees `prepareBootstrap()` success;
 - silently reject an unsupported or still-pending entry -- every entry (supported or
   unsupported) still requires an explicit decision, per B1's existing pending-vs-rejected rule;
 - mutate canonical `StoryProject` state;
@@ -288,8 +302,11 @@ author decisions + assignments
 Review Complete — Ready to Apply
 ```
 
-Never "Review Complete -> Composition automatically unlocked" -- that transition, and the
-canonical state change it implies, belongs entirely to B3d.
+"Review Complete" means the author has finished reviewing -- every entry decided, both
+assignments explicit and resolved -- not that admission is guaranteed to succeed. Never "Review
+Complete -> Composition automatically unlocked": that transition, the canonical state change it
+implies, and the possibility of `prepareBootstrap()` legitimately rejecting a complete review all
+belong entirely to B3d.
 
 #### B3c in-progress review lifetime (design decision, settled before RED)
 
@@ -324,45 +341,69 @@ hard non-goals.
 
 Before production changes, commit focused failing tests proving:
 
-1. each pending supported entry exposes exactly `APPROVE`, `EDIT`, and `REJECT` controls;
-2. approve calls B1's existing `decideBootstrapManifestEntry(..., 'approved')` and does not
+1. each pending **supported** entry exposes exactly `APPROVE`, `EDIT`, and `REJECT` controls;
+2. each pending **unsupported** entry (`supportedForApplication: false`) exposes exactly
+   `REJECT` -- no `APPROVE`, no `EDIT` -- since `prepareBootstrap()`'s `admittedProposal()`
+   already throws on an unsupported entry decided `approved` or `edited`; B3c must never offer
+   a control that invites a decision B1 will refuse;
+3. approve calls B1's existing `decideBootstrapManifestEntry(..., 'approved')` and does not
    alter the proposal;
-3. reject calls B1's existing `decideBootstrapManifestEntry(..., 'rejected')` and produces no
+4. reject calls B1's existing `decideBootstrapManifestEntry(..., 'rejected')` and produces no
    admitted proposal;
-4. edit requires a structurally valid proposal of the same supported bootstrap kind (reusing
+5. edit requires a structurally valid proposal of the same supported bootstrap kind (reusing
    `isProposalForKind`'s existing enforcement), preserves evidence and `discoveryConfidence`
    unchanged, and records the author-edited proposal through
    `decideBootstrapManifestEntry(..., 'edited', admitted)`;
-5. an unsupported entry (`supportedForApplication: false`) cannot be edited or approved into a
-   supported category; it still requires an explicit decision before the manifest can be
-   B3d-ready;
-6. no entry becomes decided merely from `discoveryConfidence`, support count, or
+6. an unsupported entry still requires an explicit decision -- it cannot be left pending and
+   counted as though it were harmless;
+7. no entry becomes decided merely from `discoveryConfidence`, support count, or
    `corroborated` classification -- decision always requires an explicit author action;
-7. POV selection is explicit and must resolve to an actor entry that will actually be admitted
+8. POV selection is explicit and must resolve to an actor entry that will actually be admitted
    by the reviewed manifest (approved or edited-and-approved, kind `actor_proposal`,
    `supportedForApplication: true`) -- never a pending, rejected, or unsupported entry;
-8. current-location selection is explicit and must resolve to a location entry under the same
+9. current-location selection is explicit and must resolve to a location entry under the same
    admitted/supported constraint;
-9. rejecting or re-editing the entry currently chosen for an assignment invalidates/stales that
-   assignment rather than silently remapping it to the new admitted id;
-10. a manifest with any pending entry is not B3d-ready;
-11. a fully decided manifest missing either required assignment is not B3d-ready;
-12. a fully decided manifest with both valid explicit assignments is B3d-ready, but canonical
-    project state is still unchanged and `prepareBootstrap()` is never called to determine this;
-13. ordinary React rerenders preserve the current in-progress review artifact instead of
+10. rejecting or re-editing the entry currently chosen for an assignment invalidates/stales that
+    assignment rather than silently remapping it to the new admitted id;
+11. `isBootstrapReviewComplete()` (or `assessBootstrapReviewReadiness()` -- name to be settled
+    at RED, see origin finding below) reports **incomplete** when any entry is still pending;
+12. reports **incomplete** when POV is unassigned;
+13. reports **incomplete** when current location is unassigned;
+14. reports **incomplete** when an assignment resolves to an entry whose decision is `rejected`;
+15. reports **incomplete** when an assignment resolves to an entry of the wrong kind (or to no
+    entry at all -- an unknown id);
+16. reports **review complete** only when every entry is decided and both assignments resolve to
+    an admitted entry of the correct kind -- and this result must never be described, tested, or
+    documented as predicting or guaranteeing `prepareBootstrap()` success; only `prepareBootstrap()`
+    in B3d establishes admission validity;
+17. ordinary React rerenders preserve the current in-progress review artifact instead of
     reconstructing decisions from a fresh B2 discovery pass;
-14. `CLOSE` hides the review surface without discarding decisions or assignments; reopening
+18. `CLOSE` hides the review surface without discarding decisions or assignments; reopening
     resumes the identical in-progress artifact; a change in bound source documents makes the
     prior artifact stale rather than silently reused;
-15. no reachable B3c path imports or calls `prepareBootstrap()`.
+19. every decision transition is immutable: the `BootstrapManifest` and `BootstrapAssignments`
+    values passed into a decision/assignment operation remain byte-for-byte unchanged afterward
+    -- only the newly returned value reflects the change;
+20. review completeness is a pure projection only -- it never normalizes, repairs, remaps,
+    auto-selects, or otherwise changes the manifest or assignments it is given;
+21. no reachable B3c path imports or calls `prepareBootstrap()`.
 
-**Origin finding.** No existing predicate answers "is this manifest+assignments combination
-ready for `prepareBootstrap()`" independently of calling `prepareBootstrap()` itself (which
-throws rather than returning a checkable result, and is off-limits to B3c). RED gate items
-10-12 require freezing a new pure, non-mutating readiness predicate over `BootstrapManifest` +
-`BootstrapAssignments` before B3c's UI can be built against it -- not a duplicate of
-`prepareBootstrap()`'s internal validation, and not a new authority type, just a read-only
-projection of decision/assignment state that already exists.
+**Origin finding.** No existing predicate answers even the narrow question "has the author
+finished deciding every entry and assigning both roles" independently of calling
+`prepareBootstrap()` itself (which throws rather than returning a checkable result, and is
+off-limits to B3c). RED gate items 11-16 require freezing a new pure, non-mutating predicate
+over `BootstrapManifest` + `BootstrapAssignments` before B3c's UI can be built against it -- not
+a duplicate of `prepareBootstrap()`'s internal validation, and not a new authority type, just a
+read-only projection of decision/assignment state that already exists.
+
+Naming matters here: this predicate must not be named or documented as anything like
+"B3d-ready," "ready for `prepareBootstrap()`," or "admission-ready" -- those names claim
+knowledge the predicate doesn't have. `prepareBootstrap()` still owns deeper domain validation
+(POV/location coherence, possession reciprocity, and whatever else it checks) that this
+predicate never runs. Candidate names to settle at RED: `isBootstrapReviewComplete()` (boolean)
+or `assessBootstrapReviewReadiness()` (a richer result carrying which of items 11-15 failed, if
+any, mirroring `assessCompositionReadiness()`'s existing shape elsewhere in this codebase).
+Either way: **review complete is not the same claim as canonical admission valid.**
 
 #### B3c hard non-goals
 
