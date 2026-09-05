@@ -170,12 +170,44 @@ function testMalformedConfidenceIsRejectedWhenPresent() {
       value: { classification: 'certain', supportingUnitCount: 1, reasons: ['proper_name_match'] },
     },
     {
+      label: 'missing classification',
+      value: { supportingUnitCount: 1, reasons: ['proper_name_match'] },
+    },
+    {
       label: 'count',
       value: { classification: 'provisional', supportingUnitCount: -1, reasons: ['proper_name_match'] },
     },
     {
+      label: 'non-integer count',
+      value: { classification: 'provisional', supportingUnitCount: 1.5, reasons: ['proper_name_match'] },
+    },
+    {
+      label: 'non-number count',
+      value: { classification: 'provisional', supportingUnitCount: '1', reasons: ['proper_name_match'] },
+    },
+    {
+      label: 'missing count',
+      value: { classification: 'provisional', reasons: ['proper_name_match'] },
+    },
+    {
       label: 'reason',
       value: { classification: 'provisional', supportingUnitCount: 1, reasons: ['Model says yes'] },
+    },
+    {
+      label: 'blank reason',
+      value: { classification: 'provisional', supportingUnitCount: 1, reasons: [''] },
+    },
+    {
+      label: 'empty reasons',
+      value: { classification: 'provisional', supportingUnitCount: 1, reasons: [] },
+    },
+    {
+      label: 'non-array reasons',
+      value: { classification: 'provisional', supportingUnitCount: 1, reasons: 'proper_name_match' },
+    },
+    {
+      label: 'missing reasons',
+      value: { classification: 'provisional', supportingUnitCount: 1 },
     },
   ];
 
@@ -184,7 +216,7 @@ function testMalformedConfidenceIsRejectedWhenPresent() {
     const manifest = buildBootstrapManifest(project, { entries });
     assert.throws(
       () => validateBootstrapManifestStructure(manifest),
-      /discovery confidence/i,
+      /discovery confidence|classification|supportingUnitCount|reasons/i,
       `malformed ${malformed.label} must fail validation`,
     );
   }
@@ -200,6 +232,21 @@ function testSupportingCountUsesDistinctEvidenceUnitIdentity() {
   };
   const valid = buildBootstrapManifest(project, { entries: [duplicateEvidenceEntry] });
   assert.doesNotThrow(() => validateBootstrapManifestStructure(valid));
+
+  const twoUnitProject = sourceOnlyProject('Keen entered Ironspire.\n\nKeen waited.');
+  const twoDistinctUnits: BootstrapDiscoveryEntry = {
+    proposed: actorProposal(),
+    evidence: [
+      exactEvidence(twoUnitProject, 'keen-unit-one', 'Keen entered Ironspire.'),
+      exactEvidence(twoUnitProject, 'keen-unit-two', 'Keen waited.'),
+    ],
+    discoveryConfidence: confidence('corroborated', 2, ['proper_name_match', 'repeated_identity_reference']),
+  };
+  const validTwoUnitManifest = buildBootstrapManifest(twoUnitProject, { entries: [twoDistinctUnits] });
+  assert.doesNotThrow(
+    () => validateBootstrapManifestStructure(validTwoUnitManifest),
+    'a legitimate count above one must remain valid when distinct unit identities support it',
+  );
 
   const wrongCount = buildBootstrapManifest(project, {
     entries: [{ ...duplicateEvidenceEntry, discoveryConfidence: confidence('provisional', 2) }],
@@ -222,15 +269,23 @@ function testConfidenceParticipatesInReviewArtifactFingerprint() {
 
 function testB3aPreservesClassificationWithoutReinterpretingCount() {
   const project = sourceOnlyProject('Keen entered Ironspire.');
-  const supplied = confidence('corroborated', 1, ['proper_name_match']);
-  const manifest = buildBootstrapManifest(project, {
-    entries: manualEntries(project, supplied, confidence()),
-  });
-  const actorEntry = manifest.entries.find((entry) => entry.kind === 'actor_proposal');
+  const classifications: BootstrapDiscoveryConfidence['classification'][] = [
+    'ambiguous',
+    'provisional',
+    'corroborated',
+  ];
 
-  assert.equal(actorEntry?.discoveryConfidence?.classification, 'corroborated');
-  assert.equal(actorEntry?.discoveryConfidence?.supportingUnitCount, 1);
-  assert.doesNotThrow(() => validateBootstrapManifestStructure(manifest));
+  for (const classification of classifications) {
+    const supplied = confidence(classification, 1, ['proper_name_match']);
+    const manifest = buildBootstrapManifest(project, {
+      entries: manualEntries(project, supplied, confidence()),
+    });
+    const actorEntry = manifest.entries.find((entry) => entry.kind === 'actor_proposal');
+
+    assert.equal(actorEntry?.discoveryConfidence?.classification, classification);
+    assert.equal(actorEntry?.discoveryConfidence?.supportingUnitCount, 1);
+    assert.doesNotThrow(() => validateBootstrapManifestStructure(manifest));
+  }
 }
 
 function testConfidenceCannotBypassDecisionsOrAssignments() {
@@ -256,6 +311,27 @@ function testConfidenceCannotBypassDecisionsOrAssignments() {
     }, 1_700_000_000_100),
     /explicit POV actor assignment and current location assignment/i,
   );
+
+  const actorEntry = pending.entries.find((entry) => entry.kind === 'actor_proposal');
+  const locationEntry = pending.entries.find((entry) => entry.kind === 'location_proposal');
+  assert.ok(actorEntry);
+  assert.ok(locationEntry);
+  const editedActor: BootstrapProposal = {
+    ...actorProposal(),
+    id: 'actor_keen_reviewed',
+    working_label: 'Keen, the scout',
+  };
+  let editedManifest = decideBootstrapManifestEntry(pending, actorEntry.id, 'edited', editedActor);
+  editedManifest = decideBootstrapManifestEntry(editedManifest, locationEntry.id, 'approved');
+  const editedResult = prepareBootstrap(project, editedManifest, {
+    activePovActorId: actorProposal().id,
+    currentLocationId: locationProposal().id,
+  }, 1_700_000_000_100);
+  assert.ok(editedResult.nextProject.actors.some((actor) => (
+    actor.id === 'actor_keen_reviewed' && actor.identity.working_label === 'Keen, the scout'
+  )));
+  assert.ok(!editedResult.nextProject.actors.some((actor) => actor.id === actorProposal().id),
+    'confidence cannot choose the original proposal over the author-edited admitted proposal');
 }
 
 function testDifferentConfidenceCannotChangeCanonicalApplication() {
@@ -299,7 +375,12 @@ function testReviewMetadataOperationsAreDeterministicAndNonMutating() {
   assert.deepEqual(discovery, discoveryBefore);
 
   const decided = decideAll(first);
+  const decidedAgain = decideAll(first);
+  assert.deepEqual(decidedAgain, decided, 'decision transitions must be deterministic');
   const decidedBefore = structuredClone(decided);
+  assert.doesNotThrow(() => validateBootstrapManifestStructure(decided));
+  assert.doesNotThrow(() => validateBootstrapManifestStructure(decided));
+  assert.deepEqual(decided, decidedBefore, 'validation must not mutate the manifest');
   const assignments = {
     activePovActorId: 'actor_keen',
     currentLocationId: 'location_ironspire',
