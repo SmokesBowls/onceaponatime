@@ -16,7 +16,9 @@ B3b — Read-Only Structural Review Presentation  ✅ done, pushed (688fc39)
         ↓
 B2 correction — Discovery-Quality Grammatical-Role Admission  ✅ done, pushed (398033e)
         ↓
-B3c–B3d — Author Decisions + Atomic Admission  ← next
+B3c — Author Decisions + Explicit Assignments  ← next (contract frozen, RED not yet written)
+        ↓
+B3d — Atomic Canonical Admission
         ↓
 B4 — Optional AI Refinement
 ```
@@ -220,12 +222,171 @@ coverage gaps (compound subjects, possessive/appositive place-attribution, passi
 all fail closed, no false positives) recorded below in "Recorded, deliberately deferred."
 See `COMPLETION_LOG.md` for the full record.
 
-### B3c–B3d — Author Decisions + Atomic Admission
+### B3c — Author Decisions + Explicit Assignments ← next
 
-- B3c adds approve/edit/reject per entry and explicit POV/current-location assignment, never
-  inferred and always represented by B1's existing decision and `BootstrapAssignments` types.
-- B3d commits only a complete explicitly reviewed manifest through B1's atomic
-  `prepareBootstrap()` boundary and presents its receipt/error honestly.
+B3c turns B3b's read-only snapshot into something an author can actually act on, without
+touching the atomic admission boundary that belongs to B3d:
+
+```text
+read-only BootstrapManifest snapshot
+        ↓
+AUTHOR REVIEW
+  approve / edit / reject
+        ↓
+fully decided BootstrapManifest
+        +
+explicit BootstrapAssignments
+  POV actor
+  current location
+        ↓
+READY FOR B3d
+```
+
+B3c is the author-facing controller for the authority system B1 already built (`BootstrapDecision`,
+`decideBootstrapManifestEntry()`, `BootstrapAssignments`), not a new authority layer. It still does
+not call `prepareBootstrap()` -- that boundary, the receipt, and canonical admission belong to B3d.
+
+#### B3c authority
+
+MAY:
+- approve a pending manifest entry, via `decideBootstrapManifestEntry(manifest, id, 'approved')`;
+- reject a pending manifest entry, via `decideBootstrapManifestEntry(manifest, id, 'rejected')`;
+- edit a supported proposal, then approve that edited proposal, via
+  `decideBootstrapManifestEntry(manifest, id, 'edited', admittedProposal)`;
+- explicitly choose `BootstrapAssignments.activePovActorId`;
+- explicitly choose `BootstrapAssignments.currentLocationId`;
+- preserve the original discovery evidence and `discoveryConfidence` through every transition;
+- produce a reviewed `BootstrapManifest` + `BootstrapAssignments` artifact for B3d to consume.
+
+MAY NOT:
+- infer POV;
+- infer current location;
+- auto-approve/auto-decide an entry based on `discoveryConfidence`, support count, or
+  `corroborated` status;
+- silently reject an unsupported or still-pending entry -- every entry (supported or
+  unsupported) still requires an explicit decision, per B1's existing pending-vs-rejected rule;
+- mutate canonical `StoryProject` state;
+- call `prepareBootstrap()`;
+- generate a bootstrap receipt;
+- alter `SourceEvidenceUnit` contents or offsets;
+- rewrite discovery rationale after an author edit;
+- create a parallel decision/assignment type system -- reuse `BootstrapDecision`,
+  `decideBootstrapManifestEntry()`, and `BootstrapAssignments` exactly as B1 defines them.
+
+#### B3c truthful UI state
+
+Composition remains locked throughout review, exactly as B3b established; only the final
+transition into B3d unlocks it:
+
+```text
+Composition Pipeline Unavailable
+        ↓
+Structural Review
+        ↓
+author decisions + assignments
+        ↓
+Review Complete — Ready to Apply
+```
+
+Never "Review Complete -> Composition automatically unlocked" -- that transition, and the
+canonical state change it implies, belongs entirely to B3d.
+
+#### B3c in-progress review lifetime (design decision, settled before RED)
+
+B3b's `BEGIN`/`CLOSE` deliberately created and discarded a disposable read-only snapshot --
+correct for a snapshot with no author work in it. B3c's snapshot accumulates real author
+decisions (potentially dozens of approve/edit/reject calls plus two assignments), so the same
+discard-on-close behavior would silently destroy that work. B3c changes this on purpose:
+
+```text
+BEGIN STRUCTURAL REVIEW
+        ↓
+working review artifact
+        ↓
+author decisions persist while project/source identity is unchanged
+
+CLOSE REVIEW
+        ↓
+hide panel
+NOT
+destroy author decisions
+```
+
+`CLOSE` hides the panel; it does not discard the reviewed manifest or assignments. Reopening
+resumes the same in-progress artifact. If the underlying source changes (a different/updated
+`AuthorSourceDocument` set -- the same identity B3b's own reopen-produces-the-same-manifest
+check already keys on), the review becomes stale and must be regenerated rather than having its
+old decisions silently reapplied to different source evidence. This is in-memory session state
+lifted above the panel's own mount/unmount, not a durable resume-after-reload feature -- see
+hard non-goals.
+
+#### B3c RED gate
+
+Before production changes, commit focused failing tests proving:
+
+1. each pending supported entry exposes exactly `APPROVE`, `EDIT`, and `REJECT` controls;
+2. approve calls B1's existing `decideBootstrapManifestEntry(..., 'approved')` and does not
+   alter the proposal;
+3. reject calls B1's existing `decideBootstrapManifestEntry(..., 'rejected')` and produces no
+   admitted proposal;
+4. edit requires a structurally valid proposal of the same supported bootstrap kind (reusing
+   `isProposalForKind`'s existing enforcement), preserves evidence and `discoveryConfidence`
+   unchanged, and records the author-edited proposal through
+   `decideBootstrapManifestEntry(..., 'edited', admitted)`;
+5. an unsupported entry (`supportedForApplication: false`) cannot be edited or approved into a
+   supported category; it still requires an explicit decision before the manifest can be
+   B3d-ready;
+6. no entry becomes decided merely from `discoveryConfidence`, support count, or
+   `corroborated` classification -- decision always requires an explicit author action;
+7. POV selection is explicit and must resolve to an actor entry that will actually be admitted
+   by the reviewed manifest (approved or edited-and-approved, kind `actor_proposal`,
+   `supportedForApplication: true`) -- never a pending, rejected, or unsupported entry;
+8. current-location selection is explicit and must resolve to a location entry under the same
+   admitted/supported constraint;
+9. rejecting or re-editing the entry currently chosen for an assignment invalidates/stales that
+   assignment rather than silently remapping it to the new admitted id;
+10. a manifest with any pending entry is not B3d-ready;
+11. a fully decided manifest missing either required assignment is not B3d-ready;
+12. a fully decided manifest with both valid explicit assignments is B3d-ready, but canonical
+    project state is still unchanged and `prepareBootstrap()` is never called to determine this;
+13. ordinary React rerenders preserve the current in-progress review artifact instead of
+    reconstructing decisions from a fresh B2 discovery pass;
+14. `CLOSE` hides the review surface without discarding decisions or assignments; reopening
+    resumes the identical in-progress artifact; a change in bound source documents makes the
+    prior artifact stale rather than silently reused;
+15. no reachable B3c path imports or calls `prepareBootstrap()`.
+
+**Origin finding.** No existing predicate answers "is this manifest+assignments combination
+ready for `prepareBootstrap()`" independently of calling `prepareBootstrap()` itself (which
+throws rather than returning a checkable result, and is off-limits to B3c). RED gate items
+10-12 require freezing a new pure, non-mutating readiness predicate over `BootstrapManifest` +
+`BootstrapAssignments` before B3c's UI can be built against it -- not a duplicate of
+`prepareBootstrap()`'s internal validation, and not a new authority type, just a read-only
+projection of decision/assignment state that already exists.
+
+#### B3c hard non-goals
+
+- No `prepareBootstrap()` call, canonical admission, receipt, or mutation; those belong to B3d.
+- No durable/disk persistence or resume-after-reload; the review artifact only needs to survive
+  `CLOSE` and ordinary rerenders within the live session, not a page reload.
+- No AI/B4 work, confidence inference/ranking, schema expansion, Promotion Manifest work,
+  facts, relationships, threads, mysteries, or continuity auditing.
+
+### B3d — Atomic Canonical Admission
+
+```text
+fully reviewed manifest
+        ↓
+prepareBootstrap()
+        ↓
+atomic canonical admission
+        ↓
+receipt / visible error
+```
+
+B3d commits only a complete, explicitly reviewed (B3c-produced) manifest through B1's existing
+atomic `prepareBootstrap()` boundary and presents its receipt or error honestly. Contract/RED
+gate to be drafted once B3c ships.
 
 ### B4 — Optional AI Refinement
 - A Hermes operation (e.g. `onceaponatime.bootstrap.refine`), receipt-bearing, following
