@@ -208,7 +208,7 @@ panel, Accept/Reject flow) — never started, out of scope for every slice since
   canonical `npm test`, TypeScript lint, production build, and `git diff --check` all
   passed before and after the fix.
 
-**Not yet pushed to `origin/main`** (local commits `8163f21`/`398033e`/`35b71d3`).
+**Pushed to `origin/main` at `398033e`.**
 
 **Not yet done:** B3c author decisions and assignments, B3d atomic admission, and B4
 optional AI refinement. See `TODO.md`.

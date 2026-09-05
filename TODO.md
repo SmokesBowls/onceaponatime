@@ -14,7 +14,7 @@ B3a — Preserve B2 Review Metadata Through Bootstrap Manifest  ✅ done, pushed
         ↓
 B3b — Read-Only Structural Review Presentation  ✅ done, pushed (688fc39)
         ↓
-B2 correction — Discovery-Quality Grammatical-Role Admission  ✅ done, not yet pushed (398033e)
+B2 correction — Discovery-Quality Grammatical-Role Admission  ✅ done, pushed (398033e)
         ↓
 B3c–B3d — Author Decisions + Atomic Admission  ← next
         ↓
@@ -200,7 +200,7 @@ Before production changes, commit focused failing tests proving:
 - No persistence/resume layer, AI/B4 work, confidence inference/ranking, schema expansion,
   Promotion Manifest work, facts, relationships, threads, mysteries, or continuity auditing.
 
-### B2 correction — Discovery-Quality Grammatical-Role Admission ✅ shipped (not yet pushed)
+### B2 correction — Discovery-Quality Grammatical-Role Admission ✅ shipped
 
 Trying real manuscript prose through B3b's review surface exposed that B2's admission
 boundary at `bootstrapDiscovery.ts` had two opposite failures at the same seam: an
