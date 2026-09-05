@@ -12,9 +12,11 @@ B2 — Deterministic Bootstrap Discovery  ✅ done, pushed (7008fd2)
         ↓
 B3a — Preserve B2 Review Metadata Through Bootstrap Manifest  ✅ done, pushed (c9faf14)
         ↓
-B3b — Read-Only Structural Review Presentation  ← next
+B3b — Read-Only Structural Review Presentation  ✅ done, pushed (688fc39)
         ↓
-B3c–B3d — Author Decisions + Atomic Admission
+B2 correction — Discovery-Quality Grammatical-Role Admission  ✅ done, not yet pushed (398033e)
+        ↓
+B3c–B3d — Author Decisions + Atomic Admission  ← next
         ↓
 B4 — Optional AI Refinement
 ```
@@ -144,7 +146,12 @@ Before production changes, commit focused failing tests proving:
 - No persistence/resume layer, AI/B4 work, Promotion Manifest changes, facts, relationships,
   schema expansion, or reinterpretation of B2 detector confidence.
 
-### B3b — Read-Only Structural Review Presentation
+### B3b — Read-Only Structural Review Presentation ✅ shipped
+
+**Shipped:** frozen RED contract in `b816516`; GREEN in `688fc39`
+(`StructuralReviewPanel.tsx`, `BEGIN STRUCTURAL REVIEW` entry point in `StoryEditor.tsx`).
+See `COMPLETION_LOG.md` for the full record. Kept below as the frozen contract this slice
+was built against.
 
 B3b closes the acknowledged UX dead end without changing authority or readiness:
 
@@ -192,6 +199,26 @@ Before production changes, commit focused failing tests proving:
 - No `prepareBootstrap()` call, canonical admission, receipt, or mutation; those belong to B3d.
 - No persistence/resume layer, AI/B4 work, confidence inference/ranking, schema expansion,
   Promotion Manifest work, facts, relationships, threads, mysteries, or continuity auditing.
+
+### B2 correction — Discovery-Quality Grammatical-Role Admission ✅ shipped (not yet pushed)
+
+Trying real manuscript prose through B3b's review surface exposed that B2's admission
+boundary at `bootstrapDiscovery.ts` had two opposite failures at the same seam: an
+unrelated noun could inherit sentence-wide action context (false positive), and a
+legitimate entity was invisible unless it matched a tiny fixed verb-adjacency list (false
+negative). Replaced with deterministic grammatical/semantic role validation: a candidate
+is now promoted only when it occupies the relevant syntactic position relative to a
+specific governing verb/preposition occurrence, never merely because a qualifying word
+appears somewhere in its sentence. `codexEngine.ts` and `codexProgressiveMemory.test.ts`
+were left untouched.
+
+**Shipped:** frozen RED contract in `8163f21`
+(`tests/bootstrapDiscoveryGrammaticalRole.test.ts`); GREEN in `398033e`
+(`observeProperNounRoles()`/`observeCommonNounRoles()` in `bootstrapDiscovery.ts`), with
+three real bugs found by an independent adversarial review fixed pre-commit. Known
+coverage gaps (compound subjects, possessive/appositive place-attribution, passive voice —
+all fail closed, no false positives) recorded below in "Recorded, deliberately deferred."
+See `COMPLETION_LOG.md` for the full record.
 
 ### B3c–B3d — Author Decisions + Atomic Admission
 

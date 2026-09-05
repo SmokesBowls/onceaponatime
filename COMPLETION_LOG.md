@@ -145,5 +145,70 @@ panel, Accept/Reject flow) — never started, out of scope for every slice since
 
 **Pushed to `origin/main` at `c9faf14`.**
 
-**Not yet done:** B3b read-only Structural Review presentation, B3c author decisions and
-assignments, B3d atomic admission, and B4 optional AI refinement. See `TODO.md`.
+## B3b — Read-Only Structural Review Presentation
+
+- Frozen the presentation contract in `b816516`; GREEN (`688fc39`) adds a
+  `BEGIN STRUCTURAL REVIEW` action to `StoryEditor.tsx`, scoped to when substantive source
+  text exists and composition readiness is not established, and a new read-only
+  `StructuralReviewPanel.tsx`.
+- The existing truthful lock heading, readiness message, and lock detail remain visible
+  even inside the opened review surface (its own header re-asserts "Composition Pipeline
+  Unavailable" plus "Discovery metadata is review assistance only") -- opening review never
+  reads as "composition is now available."
+- `BEGIN` creates exactly one deterministic snapshot by reading the existing B2 -> B3a
+  `BootstrapManifest` path; `CLOSE` discards it. Neither mutates the project, changes
+  composition readiness, nor calls `prepareBootstrap()`. Reopening unchanged source
+  reproduces the identical manifest artifact and rendering.
+- Every pending entry renders proposal kind, working label, and each separate
+  `SourceEvidenceUnit` (exact text, source document ID, unit ID, exact `[start, end)` span)
+  without React-side reinterpretation; optional discovery classification/support
+  count/reason IDs render exactly from `discoveryConfidence` or state its honest absence.
+- The surface exposes `CLOSE REVIEW` and no other control; a static scan of its reachable
+  import graph confirms neither `StoryEditor.tsx` nor `StructuralReviewPanel.tsx` imports
+  `prepareBootstrap()` or `decideBootstrapManifestEntry`.
+
+**Pushed to `origin/main` at `688fc39`.**
+
+## B2 correction — Discovery-Quality Grammatical-Role Admission
+
+- Trying real, unedited manuscript prose through the newly working B3b review surface
+  exposed that B2's admission boundary had two opposite failures, not one: Codex's
+  `classifyEntityTypes()` promoted a candidate by testing whether a qualifying verb
+  appeared *anywhere in its sentence* (false positives -- "sky", "achievements",
+  "tension", "city's energy", "guards"/"people" as agents all wrongly promoted), while
+  `observeSingleTokenNames()`'s narrow fixed-verb adjacency list meant real named actors
+  and locations (Isla, Ulric, Keen, Ironspire, Falcon Ridge) were discovered *zero* times
+  under natural verb choices. Frozen as a RED fixture using the exact supplied passage in
+  `8163f21`.
+- GREEN (`398033e`) replaces the admission boundary with positional role checks:
+  `observeProperNounRoles()` inspects what specifically governs each proper-noun
+  occurrence (spatial preposition, place-governing verb, stative-place predicate, or
+  agentive-subject verb -- location checked before actor, so an unrelated Codex lexical
+  collision like "falcon" -> creature can no longer silently veto "Falcon Ridge");
+  `observeCommonNounRoles()` keeps Codex's noun-phrase/head-noun boundaries but discards
+  its `primaryType` entirely, requiring both a semantic precondition (head noun is
+  person/place/thing-shaped) and positional confirmation before promoting anything.
+  `codexEngine.ts` and `codexProgressiveMemory.test.ts` were left untouched throughout.
+- An independent adversarial review (fresh context, no exposure to the implementation
+  reasoning) confirmed the core architecture is genuinely positional, then found and
+  (before this commit) had fixed three real bugs: an appositive-embedded name inheriting
+  an unrelated later verb in a compound predicate; several stance/motion verbs
+  (`remained`/`stayed`/`continued`/`entered`/`left`/`approached`) being equally
+  grammatical with an inanimate subject with no way to flag the resulting uncertainty
+  (now split into a strong tier and an ambiguous tier -- a candidate confirmed solely by
+  the ambiguous tier with no corroborating strong evidence anywhere in the document now
+  carries `classification: 'ambiguous'` instead of false confidence); and an
+  order-dependent dedup starvation inherited from calling Codex's candidate extractor once
+  per paragraph instead of once per sentence.
+- A further adversarial pass (compound subjects, possessive/appositive place-attribution,
+  passive voice) found zero additional false positives; three real but safely-failing
+  coverage gaps were recorded in `TODO.md` (`35b71d3`) rather than folded into this slice.
+- Frozen fixture, original B2 suite, B3a, B3b, Bootstrap Manifest, Bootstrap State
+  Honesty, Bootstrap/Promotion Interop, `codexProgressiveMemory.test.ts` standalone,
+  canonical `npm test`, TypeScript lint, production build, and `git diff --check` all
+  passed before and after the fix.
+
+**Not yet pushed to `origin/main`** (local commits `8163f21`/`398033e`/`35b71d3`).
+
+**Not yet done:** B3c author decisions and assignments, B3d atomic admission, and B4
+optional AI refinement. See `TODO.md`.
