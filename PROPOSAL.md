@@ -687,22 +687,22 @@ A model may still perform better or worse at a given operation. The framework sh
 
 ---
 
-## 18. Behavioral Reference: Perchance
+## 18. Behavioral References: Perchance and Novella
 
-Two existing Perchance tools are useful behavioral benchmarks:
+Existing focused writing tools are useful behavioral benchmarks because they demonstrate that a purpose-built story interface can outperform a generic chatbot experience even when the underlying generative capability is similar.
+
+Perchance references include:
 
 - https://perchance.org/story-ai
 - https://perchance.org/ai-rewriter
 
-They are references because they demonstrate that relatively focused storytelling and rewriting experiences can produce behavior that is often more useful than generic chatbot continuation.
+Observed Novella behavior is also relevant. Its continuation workflow constructs a substantial model-facing package from apparently simple author controls. The package includes a project Bible, style profile, story-so-far, story state, explicit author-selected world constraints, plot design, continuation instructions, and a creativity level. Explicit author choices are stated as higher authority than inferred material.
 
-They are **not** implementation specifications and should not be copied verbatim.
+These tools are behavioral references, **not** implementation specifications. Onceaponatime should compare observed behavior, preserve evidence separately, and determine experimentally which mechanisms belong in its own architecture.
 
 The research question is:
 
-> What surrounding guidance or interaction pattern causes these tools to perform well, and which failure modes remain unsolved?
-
-The project should compare observed behavior rather than assume Perchance's internal implementation.
+> What surrounding guidance, accumulated story representation, and interaction pattern causes focused writing tools to perform well, and which long-form continuity and authority problems remain unsolved?
 
 ---
 
@@ -918,3 +918,361 @@ thread_005 remains unresolved
 It should not require any particular character name, fictional world, genre, plot, or existing project to make those relationships meaningful.
 
 **Names are project data. Working labels are project data. Roles are mutable state. Stable identities are framework references. Storytelling behavior is framework responsibility.**
+
+---
+
+## 25. Progressive Bible / Codex Accumulation
+
+The project Bible should be understood as a **progressive narrative memory**, not a one-time summary.
+
+For an existing story, ingestion should proceed chapter by chapter, scene by scene, or beat by beat. Each accepted source unit contributes evidence to the same accumulated Bible.
+
+Conceptually:
+
+```text
+SOURCE UNIT 001
+      ↓
+extract evidence
+      ↓
+BIBLE / CODEX v001
+
+SOURCE UNIT 002
+      ↓
+compare with accumulated memory
+      ↓
+new claims + supporting evidence + refinements + state changes + conflicts
+      ↓
+BIBLE / CODEX v002
+```
+
+Each new source unit may do one or more of the following:
+
+- introduce a genuinely new entity, relationship, fact, thread, or state,
+- provide additional independent support for an existing interpretation,
+- refine a previously vague interpretation,
+- establish that an entity or relationship changed state over narrative time,
+- expose a same-scope contradiction that requires review,
+- establish a belief, rumor, interpretation, or perspective without promoting it to world truth.
+
+Compatible evidence should accumulate rather than create duplicate Bible facts.
+
+Confidence or reliability must describe **how strongly and consistently the accepted narrative evidence supports an interpretation**. It must not be treated as a magical truth probability. Repetition from the same dependent source should not automatically count as independent confirmation.
+
+The evidence and provenance behind an interpretation must remain inspectable so that a later chapter can strengthen, narrow, supersede, or challenge an earlier reading without destroying the history of how the Bible reached its current state.
+
+Absence of evidence is not automatically negative authority. The framework must distinguish:
+
+```text
+ESTABLISHED FALSE / FORBIDDEN
+        ≠
+NOT YET ESTABLISHED / OPEN SPACE
+```
+
+---
+
+## 26. Temporal Entity State and Narrative Identity
+
+Stable entities persist while their properties, designations, relationships, availability, and interpretation may change over narrative time.
+
+A later incompatible value is not necessarily a contradiction. It may be a valid state transition.
+
+Examples include:
+
+```text
+role: antagonist → ally
+location: location_001 → location_004
+life_state: alive → dead → returned
+availability: present → absent → present
+designation: working title → revealed name → later title
+group_membership: none → faction_003
+object_progression: fragment_1 → fragment_2 → embodied_level_1
+knowledge: does_not_know fact_011 → knows fact_011
+```
+
+The framework should therefore distinguish at least:
+
+```text
+SUPPORTED SAME-STATE EVIDENCE
+STATE CHANGE
+SUPERSEDED HISTORICAL STATE
+SAME-SCOPE CONTRADICTION
+OPEN / INTERPRETIVE AMBIGUITY
+```
+
+A state transition should preserve the earlier state as historically true within its valid scope rather than overwriting it as though it had never existed.
+
+Human-facing identity is also temporal. One persistent actor may be known by different descriptions, names, titles, colors, ranks, or collective designations at different points in the story. Conversely, multiple persistent actors may temporarily share a collective designation.
+
+The framework must not create a new underlying entity merely because the prose begins using a new surface label.
+
+Group identity should remain separate from member identity. A later collective designation can be represented as a group entity whose members retain their own stable actor identities and prior histories.
+
+Artifacts and other non-character entities require the same treatment. An evolving object remains one persistent object while its fragment count, embodiment level, enhancements, condition, owner, bearer, or bonded actor may change through explicit state and relationship transitions.
+
+---
+
+## 27. Bible Editability and Provenance
+
+The accumulated Bible must remain editable by the author whether an entry originated from:
+
+- explicit author input,
+- extraction from accepted prose,
+- deterministic framework inference,
+- model-assisted interpretation,
+- or accepted generated material.
+
+Origin affects provenance and authority; it does not remove author control.
+
+Conceptually:
+
+```text
+ENTRY
+- stable_id
+- current interpretation/state
+- source origin
+- evidence links
+- narrative scope
+- confidence/reliability metadata
+- author edits
+- revision history
+```
+
+Editing the Bible mid-story may create continuity problems. The framework should surface those consequences rather than prohibit the edit.
+
+For example, an edit may produce:
+
+```text
+This change conflicts with:
+- 12 accepted passages
+- 2 planned reveals
+- 1 active relationship state
+```
+
+The author should then be able to cancel, apply the Bible change while leaving prose unchanged, or apply it and flag affected narrative material for later repair.
+
+Author-known information may also exist in the Bible before the prose reveals it. Such information must remain distinct from reader knowledge and actor knowledge so that editability does not cause premature disclosure.
+
+---
+
+## 28. Generation Authority Modes
+
+Generation freedom and Bible authority are separate concerns.
+
+The author-facing control should expose a small number of mutually exclusive authority modes rather than ambiguous independent checkboxes.
+
+### 28.1 Strict Bible
+
+Everything established in the Bible is binding, and substantive invention outside its defined material is restricted.
+
+The model may still render prose, dialogue, sensory detail, transitions, and other expression necessary to realize already-authorized material, but it should not introduce new major lore, factions, powers, identities, history, or plot commitments.
+
+### 28.2 Bible + Creative
+
+Everything established in the Bible remains binding, but undefined narrative space is available for invention.
+
+The model may create supporting details, incidental characters, local complications, environments, culture, scene-level events, and other material so long as the invention does not contradict protected story authority.
+
+This is the expected mode for a mature existing story that should remain faithful while still allowing the model to actually write.
+
+### 28.3 Open Forge
+
+The Bible is a foundation rather than a closed boundary.
+
+The model may create substantial new worldbuilding, characters, factions, powers, plot arcs, mysteries, locations, or other major material where the author has left room for creation. Accepted generated material may then be accumulated back into the same editable Bible for subsequent continuity.
+
+This mode supports a new or sparsely specified project in which the framework must help bootstrap the story rather than merely preserve one that already exists.
+
+These modes govern **where the fences are**. They do not replace a separate creative-initiative control.
+
+---
+
+## 29. Creative Initiative Is Independent of Authority
+
+Within an authority mode, the author should be able to change how aggressively the model explores available narrative space.
+
+A candidate scale might be:
+
+```text
+1 — minimal invention; stay close to immediate material
+2 — modest elaboration
+3 — balanced invention
+4 — actively develop open narrative space
+5 — strong creative initiative within current authority
+```
+
+Therefore:
+
+```text
+STRICT BIBLE + initiative 5
+```
+
+means strong prose and scene invention while remaining inside a narrow factual boundary.
+
+```text
+BIBLE + CREATIVE + initiative 5
+```
+
+means aggressively develop whatever the established story has left open without rewriting established facts.
+
+```text
+OPEN FORGE + initiative 5
+```
+
+means take broad creative initiative and allow newly accepted inventions to become part of the evolving Bible.
+
+Authority mode and creative initiative should be changeable between continuations. They are operation controls, not irreversible project settings.
+
+This allows an author to begin a precisely specified scene conservatively, increase initiative once the immediate supplied material is exhausted, then reduce initiative again for a protected reveal without ever abandoning the same story authority.
+
+---
+
+## 30. One Bible, Multiple Population Paths
+
+Onceaponatime should not require separate Bible architectures for existing fiction and newly generated fiction.
+
+The same accumulated representation can be populated through different paths:
+
+```text
+EXISTING STORY
+accepted prose
+      ↓
+progressive extraction and evidence accumulation
+      ↓
+BIBLE
+```
+
+```text
+NEW STORY
+premise + author settings + accepted generation
+      ↓
+progressive accumulation
+      ↓
+BIBLE
+```
+
+```text
+HYBRID STORY
+existing prose + explicit author entries + accepted generation
+      ↓
+progressive accumulation
+      ↓
+BIBLE
+```
+
+The difference is not the destination. The difference is where authority and evidence originate.
+
+For an existing story, ingestion should normally curate before generation: each additional chapter teaches the framework more about the narrative and strengthens or changes the accumulated memory.
+
+For a blank or sparse story, creation is necessary because there is little source material to curate. Accepted invention then becomes future evidence and continuity material.
+
+---
+
+## 31. Model-Facing Narrative Context Package
+
+The author should interact with simple story controls, while the framework compiles those controls into a richer model-facing narrative package.
+
+A candidate package may include:
+
+```text
+AUTHOR REQUEST
+CURRENT AUTHORITY MODE
+CREATIVE INITIATIVE
+RELEVANT BIBLE / CODEX
+CURRENT STORY STATE
+TEMPORAL ENTITY STATES
+ALLOWED KNOWLEDGE
+LOCKED / AVAILABLE REVEALS
+ACTIVE THREADS
+STYLE PROFILE
+RELEVANT STORY SO FAR
+NARRATIVE DISTANCE
+VALIDATION CONTRACT
+```
+
+Explicit author-supplied constraints should outrank framework inference and model invention.
+
+The goal is not to force the author to operate a complex prompt. The framework should convert an author-facing command such as:
+
+```text
+Continue this chapter.
+Stay inside my story.
+Be more creative this time.
+```
+
+into the precise context and constraints required by the selected model adapter.
+
+---
+
+## 32. Expanded Behavioral Proofs
+
+The progressive Bible and generation-control model introduce additional tests that should eventually join the benchmark suite.
+
+### Test 11 — Progressive Evidence Accumulation
+
+Ingest multiple source units that independently support the same interpretation.
+
+Measure whether the framework strengthens one accumulated entry rather than creating duplicates.
+
+### Test 12 — State Change vs. Contradiction
+
+Establish one value in an early narrative scope and a legitimately changed value later.
+
+Measure whether both remain historically valid rather than being flagged as a same-scope contradiction.
+
+### Test 13 — Designation Change Without Identity Loss
+
+Introduce an actor through a temporary description, later reveal a personal name, and later apply a title or group designation.
+
+Measure whether every state remains attached to one stable actor identity.
+
+### Test 14 — Collective Identity
+
+Introduce several persistent actors individually and later place them under one collective designation.
+
+Measure whether the group is created without collapsing the member identities.
+
+### Test 15 — Progressive Artifact State
+
+Advance one persistent object through multiple forms or levels while changing its relationship to an actor.
+
+Measure whether object state and actor-object relationship remain distinct and temporally scoped.
+
+### Test 16 — Strict Bible Boundary
+
+Attempt to induce a major unsupported lore invention while Strict Bible is active.
+
+Measure whether the framework prevents or rejects it.
+
+### Test 17 — Creative Open Space
+
+Use the same established Bible under Bible + Creative with high initiative.
+
+Measure whether the model produces meaningful new material in undefined space without contradicting established authority.
+
+### Test 18 — Open Forge Bootstrap
+
+Begin from a sparse premise with Open Forge enabled.
+
+Measure whether accepted generation can create a coherent expandable Bible that remains editable and usable for subsequent continuation.
+
+---
+
+## 33. Refined Governing Principle
+
+Onceaponatime is not merely a static story Bible and not merely a prose generator.
+
+It is a framework in which:
+
+```text
+ENTITIES PERSIST
+STATES CHANGE
+EVIDENCE ACCUMULATES
+KNOWLEDGE REMAINS SCOPED
+AUTHORITY REMAINS EXPLICIT
+THE BIBLE REMAINS EDITABLE
+GENERATION FREEDOM IS AUTHOR-CONTROLLED
+```
+
+The human-readable Bible is a view over accumulated narrative evidence and temporal state. The model-facing context is a bounded compilation of that memory for the current operation. The language model supplies generative intelligence inside those boundaries.
+
+**The framework should be strict about what the story has established, precise about what has changed, honest about what remains uncertain, and flexible enough to create when the author intentionally leaves space open.**
