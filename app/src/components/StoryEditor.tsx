@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import {
   Play,
   Sparkles,
@@ -34,6 +34,9 @@ import {
   assessCompositionReadiness,
   NARRATIVE_STRUCTURE_UNESTABLISHED_MESSAGE,
 } from '../lib/compositionReadiness';
+import { discoverBootstrap } from '../lib/bootstrapDiscovery';
+import { buildBootstrapManifest, type BootstrapManifest } from '../lib/bootstrapManifest';
+import { StructuralReviewPanel } from './StructuralReviewPanel';
 
 /**
  * Compact, author-visible failure notice for the two Workbench operations that
@@ -107,8 +110,17 @@ export const StoryEditor: React.FC<StoryEditorProps> = ({
   const [editingBeatContent, setEditingBeatContent] = useState('');
   const [nakedComparisonText, setNakedComparisonText] = useState<string | null>(null);
   const [isNakedLoading, setIsNakedLoading] = useState(false);
+  const [structuralReviewSnapshot, setStructuralReviewSnapshot] = useState<BootstrapManifest | null>(null);
 
   const readiness = assessCompositionReadiness(project);
+  const hasSubstantiveSource = (project.sourceDocuments ?? []).some(
+    (document) => document.exactText.trim().length > 0,
+  );
+
+  useEffect(() => {
+    setStructuralReviewSnapshot(null);
+  }, [project.id]);
+
   const hasAnyActors = project.actors.length > 0;
   const hasAnyLocations = project.locations.length > 0;
 
@@ -163,6 +175,10 @@ export const StoryEditor: React.FC<StoryEditorProps> = ({
     } finally {
       setIsNakedLoading(false);
     }
+  };
+
+  const handleBeginStructuralReview = () => {
+    setStructuralReviewSnapshot(buildBootstrapManifest(project, discoverBootstrap(project)));
   };
 
   const activePov = project.actors.find((a) => a.id === activePovActorId(project));
@@ -731,6 +747,11 @@ export const StoryEditor: React.FC<StoryEditorProps> = ({
                   </>
                 )}
               </button>
+            ) : structuralReviewSnapshot !== null ? (
+              <StructuralReviewPanel
+                manifest={structuralReviewSnapshot}
+                onClose={() => setStructuralReviewSnapshot(null)}
+              />
             ) : (
               <div className="w-full py-3.5 px-4 rounded bg-[#E5E2D9]/60 border border-[#1A1A1A]/20 text-center space-y-1.5">
                 <div className="flex items-center justify-center gap-2 text-[#5A554E] font-sans font-bold uppercase tracking-[0.15em] text-xs">
@@ -743,6 +764,15 @@ export const StoryEditor: React.FC<StoryEditorProps> = ({
                 <p className="text-[#8C827A] font-sans text-[10px] uppercase tracking-wider">
                   Structural review must establish at least one actor and one location before generation can run.
                 </p>
+                {hasSubstantiveSource && (
+                  <button
+                    type="button"
+                    onClick={handleBeginStructuralReview}
+                    className="mt-2 inline-flex items-center justify-center rounded border border-[#1A1A1A]/30 bg-[#FDFCF8] px-4 py-2 text-[10px] font-bold uppercase tracking-[0.15em] text-[#1A1A1A] transition hover:bg-white"
+                  >
+                    BEGIN STRUCTURAL REVIEW
+                  </button>
+                )}
               </div>
             )}
 
