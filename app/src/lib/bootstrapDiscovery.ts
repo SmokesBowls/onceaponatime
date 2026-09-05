@@ -1,18 +1,16 @@
 import type { AuthorSourceDocument, StoryProject } from '../types';
 import type {
+  BootstrapDiscoveryConfidence,
   BootstrapDiscoveryEntry,
   BootstrapProposal,
   SourceEvidenceUnit,
 } from './bootstrapManifest';
 import { extractNovelEntityCandidates } from './codexEngine';
 
-export type BootstrapDiscoveryClassification = 'ambiguous' | 'provisional' | 'corroborated';
-
-export interface BootstrapDiscoveryConfidence {
-  readonly classification: BootstrapDiscoveryClassification;
-  readonly supportingUnitCount: number;
-  readonly reasons: readonly string[];
-}
+export type {
+  BootstrapDiscoveryClassification,
+  BootstrapDiscoveryConfidence,
+} from './bootstrapManifest';
 
 export interface EvidenceBackedBootstrapDiscoveryEntry extends BootstrapDiscoveryEntry {
   readonly discoveryConfidence: BootstrapDiscoveryConfidence;

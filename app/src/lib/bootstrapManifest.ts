@@ -169,6 +169,18 @@ export function isBootstrapEntityProposalKind(kind: BootstrapProposalKind): bool
 
 export type BootstrapDecision = 'pending' | 'approved' | 'edited' | 'rejected';
 
+/**
+ * Deterministic B2 review metadata. This explains why discovery surfaced a
+ * candidate; it is never an admission decision or a canonical truth score.
+ */
+export type BootstrapDiscoveryClassification = 'ambiguous' | 'provisional' | 'corroborated';
+
+export interface BootstrapDiscoveryConfidence {
+  readonly classification: BootstrapDiscoveryClassification;
+  readonly supportingUnitCount: number;
+  readonly reasons: readonly string[];
+}
+
 // ---------------------------------------------------------------------------
 // Manifest entry / manifest
 // ---------------------------------------------------------------------------
@@ -181,6 +193,8 @@ export interface BootstrapManifestEntry {
   readonly decision: BootstrapDecision;
   readonly admitted?: BootstrapProposal;
   readonly evidence: readonly SourceEvidenceUnit[];
+  /** Present only when supplied by discovery; manual/legacy entries remain honestly absent. */
+  readonly discoveryConfidence?: BootstrapDiscoveryConfidence;
   readonly supportedForApplication: boolean;
 }
 
@@ -291,14 +305,21 @@ export function sourceDocumentsAreIdentical(
   return true;
 }
 
-function fingerprintEntrySources(
-  entries: readonly { kind: BootstrapProposalKind; sourceIndex: number; proposed: BootstrapProposal; evidence: readonly SourceEvidenceUnit[] }[],
-): string {
+interface BootstrapEntrySource {
+  readonly kind: BootstrapProposalKind;
+  readonly sourceIndex: number;
+  readonly proposed: BootstrapProposal;
+  readonly evidence: readonly SourceEvidenceUnit[];
+  readonly discoveryConfidence?: BootstrapDiscoveryConfidence;
+}
+
+function fingerprintEntrySources(entries: readonly BootstrapEntrySource[]): string {
   return fingerprintString(stableSerialize(entries.map((e) => ({
     kind: e.kind,
     sourceIndex: e.sourceIndex,
     proposed: e.proposed,
     evidence: e.evidence,
+    ...(e.discoveryConfidence === undefined ? {} : { discoveryConfidence: e.discoveryConfidence }),
   }))), 'bootstrap-entries');
 }
 
@@ -427,6 +448,7 @@ export function isBootstrapEntityProposal(value: BootstrapProposal): value is Bo
 export interface BootstrapDiscoveryEntry {
   readonly proposed: BootstrapProposal;
   readonly evidence: readonly SourceEvidenceUnit[];
+  readonly discoveryConfidence?: BootstrapDiscoveryConfidence;
 }
 
 export interface BootstrapDiscoveryPayload {
@@ -445,6 +467,9 @@ function createEntry(manifestId: string, sourceIndex: number, discoveryEntry: Bo
     proposed: structuredClone(discoveryEntry.proposed),
     decision: 'pending',
     evidence: structuredClone(discoveryEntry.evidence),
+    ...(discoveryEntry.discoveryConfidence === undefined
+      ? {}
+      : { discoveryConfidence: structuredClone(discoveryEntry.discoveryConfidence) }),
     supportedForApplication: SUPPORTED_BOOTSTRAP_PROPOSAL_KINDS.has(discoveryEntry.proposed.kind),
   };
 }
@@ -466,6 +491,7 @@ export function buildBootstrapManifest(
     sourceIndex: 0, // placeholder, replaced below once grouped
     proposed: entry.proposed,
     evidence: entry.evidence,
+    ...(entry.discoveryConfidence === undefined ? {} : { discoveryConfidence: entry.discoveryConfidence }),
   }));
   // sourceIndex is scoped per-kind (mirrors promotionManifest.ts's per-category indexing).
   const indexByKind = new Map<BootstrapProposalKind, number>();
@@ -526,6 +552,9 @@ export function decideBootstrapManifestEntry(
       proposed: structuredClone(entry.proposed),
       decision,
       evidence: structuredClone(entry.evidence),
+      ...(entry.discoveryConfidence === undefined
+        ? {}
+        : { discoveryConfidence: structuredClone(entry.discoveryConfidence) }),
       supportedForApplication: entry.supportedForApplication,
       ...(decision === 'edited' && admitted !== undefined ? { admitted: structuredClone(admitted) } : {}),
     };
@@ -563,6 +592,7 @@ export function validateBootstrapManifestStructure(manifest: BootstrapManifest):
     sourceIndex: entry.sourceIndex,
     proposed: entry.proposed,
     evidence: entry.evidence,
+    ...(entry.discoveryConfidence === undefined ? {} : { discoveryConfidence: entry.discoveryConfidence }),
   }));
   const calculatedEntriesFingerprint = fingerprintEntrySources(entrySources);
   if (manifest.entriesFingerprint !== calculatedEntriesFingerprint) {
@@ -612,6 +642,37 @@ export function validateBootstrapManifestStructure(manifest: BootstrapManifest):
         throw new Error(
           `Malformed Bootstrap Manifest: entry ${entry.id} evidence exactText does not match the bound source document at [${unit.startOffset}, ${unit.endOffset})`,
         );
+      }
+    }
+    if (entry.discoveryConfidence !== undefined) {
+      const confidence = entry.discoveryConfidence;
+      if (!isRecord(confidence)) {
+        throw new Error(`Malformed Bootstrap Manifest discovery confidence on entry ${entry.id}`);
+      }
+      if (
+        typeof confidence.classification !== 'string'
+        || !['ambiguous', 'provisional', 'corroborated'].includes(confidence.classification)
+      ) {
+        throw new Error(`Malformed Bootstrap Manifest discovery confidence classification on entry ${entry.id}`);
+      }
+      if (!Number.isInteger(confidence.supportingUnitCount) || Number(confidence.supportingUnitCount) <= 0) {
+        throw new Error(`Malformed Bootstrap Manifest discovery confidence supportingUnitCount on entry ${entry.id}`);
+      }
+      const distinctEvidenceUnitCount = new Set(entry.evidence.map((unit) => unit.unitId)).size;
+      if (confidence.supportingUnitCount !== distinctEvidenceUnitCount) {
+        throw new Error(
+          `Malformed Bootstrap Manifest discovery confidence supportingUnitCount on entry ${entry.id}: `
+          + `expected ${distinctEvidenceUnitCount} distinct evidence units`,
+        );
+      }
+      if (
+        !Array.isArray(confidence.reasons)
+        || confidence.reasons.length === 0
+        || !confidence.reasons.every((reason) => (
+          typeof reason === 'string' && /^[a-z0-9]+(?:_[a-z0-9]+)*$/.test(reason)
+        ))
+      ) {
+        throw new Error(`Malformed Bootstrap Manifest discovery confidence reasons on entry ${entry.id}`);
       }
     }
     if (!['pending', 'approved', 'edited', 'rejected'].includes(entry.decision)) {
