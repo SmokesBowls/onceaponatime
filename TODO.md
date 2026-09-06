@@ -20,7 +20,7 @@ B3c — Author Decisions + Explicit Assignments  ✅ done, pushed (1a93177)
         ↓
 B3d — Atomic Canonical Admission  ✅ done, not yet pushed (14d86e2)
         ↓
-B4 — Optional AI Refinement  ← contract drafted; awaiting freeze + RED
+B4 — Optional AI Refinement  ← split into B4a/B4b/B4c/B4d; B4a contract drafted, awaiting RED
 ```
 
 ### B2 — Deterministic Bootstrap Discovery ✅ shipped
@@ -730,6 +730,44 @@ error-carrying prop, no new display component.
 
 ### B4 — Optional AI Refinement  ← contract draft; not frozen, no RED/implementation yet
 
+#### B4 split into four increments (design decision, settled before B4a RED)
+
+The rest of this section is the master B4 contract, frozen as one document. Implementation
+does not proceed as one RED gate against it, for the same reason B3c was split into
+decision-logic and workspace/lifecycle: a single monolithic RED makes any later failure hard
+to localize. B4 is split into four independently frozen/RED/GREEN increments, each building
+only on the previous increment's *shipped* public boundary, never on its implementation
+choices beyond that boundary:
+
+```text
+B4a — Hermes Refinement Artifact Boundary
+  request construction, exact source/review inputs, receipt-bearing inference,
+  raw response validation, deterministic IDs/digests, fail-closed malformed/
+  unavailable output. Produces exactly one artifact and stops:
+  Hermes raw output -> validate -> BootstrapRefinementArtifact.
+  No additive merge, no UI, no B3 review integration.
+        ↓
+B4b — Refinement Merge
+  additional proposals / suggested edits additively merged into bootstrap review
+  material; provenance preserved; collisions/duplicates handled deterministically;
+  original B2 proposals never rewritten in place; no author decisions transferred
+  or invented.
+        ↓
+B4c — Optional Refinement UI + Lifecycle
+  explicit REFINE action, loading/error state, source/review staleness, repeated-
+  refinement behavior, no automatic invocation; resulting proposals return through
+  the same B3 review controls.
+        ↓
+B4d — End-to-End Authority Proof
+  B2 -> optional Hermes refinement -> B3 review -> B3d prepareBootstrap, proven
+  together against the real wired surfaces (not fresh mocks).
+```
+
+Each increment gets its own narrowing pre-implementation note below (where it turns the
+master contract's prose into exact file/function/type names) and its own RED gate. The
+master contract above/below remains the authority both increments answer to; an increment's
+note may narrow scope (defer a piece to a later increment) but may never contradict it.
+
 #### Purpose
 
 B4 may ask Hermes for one optional, receipt-bearing refinement pass over a freshly generated,
@@ -1100,6 +1138,100 @@ separate checkpoints; no B4 production implementation is authorized by this draf
   cancellation transport, and no multi-pass AI refinement.
 - No B3d canonical admission or identity-resolution semantic changes. B4 only extends the existing
   receipt projection with immutable provenance after the same admission rules succeed.
+
+#### B4a — Hermes Refinement Artifact Boundary  ← first B4 increment, contract drafted; awaiting RED
+
+**Scope.** B4a produces exactly one thing: given an eligible baseline `BootstrapManifest` and its
+bound `AuthorSourceDocument[]`, call Hermes once through a receipt-bearing provider and return a
+validated, immutable `BootstrapRefinementArtifact`, or throw. It performs no additive merge into a
+`BootstrapManifest` (B4b), renders no UI (B4c), and is not called from anywhere reachable through
+`BootstrapReviewWorkspace.tsx`, `bootstrapReview.ts`, `StoryEditor.tsx`, or `prepareBootstrap.ts`.
+
+**Files.**
+
+- `src/lib/bootstrapRefinement.ts` — pure, browser-safe (no `node:crypto`, no `fetch`, no server
+  import), mirroring `src/lib/bootstrapManifest.ts`'s domain-module convention. Defines
+  `BootstrapRefinementCandidateKind`, `BootstrapRefinementEvidenceCitation`,
+  `BootstrapRefinementCandidate`, `BootstrapRefinementPayload`, and
+  `BootstrapRefinementArtifact = InferenceArtifact<BootstrapRefinementPayload>`; the exact
+  `onceaponatime.bootstrap.refine` operation string and `onceaponatime.bootstrap.refinement.v1`
+  schema string as named constants; `isBootstrapRefinementEligible(manifest)` (every entry
+  `pending`, no `admitted` value); the strict raw-JSON structural validator plus UTF-16 coordinate
+  replay against bound source text (produces candidates *without* digests — digesting needs
+  crypto); and `parseJsonNoDuplicateKeys()`, a duplicate-key/trailing-value-detecting JSON reader
+  used on raw Hermes output text (`JSON.parse()` alone is insufficient per the master contract).
+- `server/bootstrapRefinement.ts` — server-only (may use `node:crypto`), mirroring
+  `server/narrativePipeline.ts`'s orchestration convention. Builds the Hermes prompt from the exact
+  baseline manifest and source documents only; the SHA-256 digest functions
+  (`candidateDigest`/`rawOutputDigest`/`artifactDigest`) over the documented versioned
+  length-prefixed encoding; and `refineBootstrapManifest(baseline, sourceDocuments, provider?)`, the
+  orchestrator shaped like `planNarrativeBeat()`/`renderNarrativeProse()`: checks eligibility, calls
+  `provider.generateText({ operation: 'onceaponatime.bootstrap.refine', ... })` on a
+  `ReceiptBearingModelProvider` (never the transitional `ModelProvider`/Gemini path), validates and
+  digests the raw output via `src/lib/bootstrapRefinement.ts`, wraps the result with
+  `createInferenceArtifact()`, and deep-freezes the payload and every nested candidate/citation.
+
+**Explicitly deferred out of B4a** (named later increments, not abandoned):
+
+- The live `/api/bootstrap/refine` Express route, its route-specific raw body parser ahead of the
+  app-wide `express.json()`, and HTTP-level duplicate-key detection on the *browser's* request body.
+  B4a's own `parseJsonNoDuplicateKeys()` is exercised directly against raw Hermes *model* output
+  text, which is B4a's real hostile-input boundary regardless of transport; wiring an HTTP route to
+  call `refineBootstrapManifest()` is transport plumbing, deferred to B4c — the same increment that
+  adds the explicit REFINE action a live browser session actually calls it from.
+- Idempotency-key reservation, retry-ordinal tracking, and per-session single-success enforcement —
+  these need the live review-session identity (`refinementSessionId`) B4c owns, not the pure
+  artifact-production boundary B4a proves.
+- All additive-merge, suggested-edit attachment, and manifest-identity-rebase behavior (B4b).
+
+**B4a RED gate.** Freeze failing tests proving, against injected fake `ReceiptBearingModelProvider`s
+(mirroring `tests/stage1HermesActivation.test.ts`'s pattern), with no live network call:
+
+1. `refineBootstrapManifest()` is unreachable from `discoverBootstrap()`, `buildBootstrapManifest()`,
+   `bootstrapReview.ts`, `BootstrapReviewWorkspace.tsx`, `StoryEditor.tsx`, or `prepareBootstrap.ts` —
+   a static reachable-import-graph scan proves it, mirroring B3b's `prepareBootstrap()` ban;
+2. the exact operation label `onceaponatime.bootstrap.refine` is sent and nothing else; a
+   transitional `ModelProvider` (Gemini) is rejected at the type level like Stage 1/2;
+3. the prompt is built only from the exact bound baseline manifest and source documents passed in —
+   changing an unrelated field of either changes the prompt deterministically, and no other project
+   data reaches the provider call;
+4. a returned artifact carries the provider's exact `InferenceReceipt` unchanged and is deep-frozen
+   (artifact, payload, every candidate, every evidence citation);
+5. `isBootstrapRefinementEligible()` rejects a baseline with any non-`pending` entry or any
+   `admitted` value present, before the provider is ever called;
+6. malformed JSON from the model — including duplicate top-level and nested keys, and trailing
+   values — fails closed via `parseJsonNoDuplicateKeys`, never falling through to bare `JSON.parse`;
+7. wrong top-level key set, wrong `schema`, and a mismatched `baseline_manifest_id` or
+   `bound_source_fingerprint` each fail closed;
+8. each of the four supported kinds parses; `fact_proposal`/`relationship_proposal` and any unknown
+   kind reject the whole output; `initial_location_id`/`initial_holder_actor_id`/`member_actor_ids`
+   present on any candidate reject the whole output (excluded topology fields);
+9. UTF-16 offset replay against the bound source text: exact match required, astral/surrogate-pair
+   fixtures, `end_offset <= start_offset`, out-of-range/non-integer offsets, and a span containing no
+   Unicode letter or number all fail closed, as does an unknown `source_document_id`; a duplicate
+   identical span within one candidate fails closed, but distinct overlapping spans and reuse of one
+   span across different candidates are preserved, not coalesced;
+10. resource limits reject closed: output over 262,144 UTF-8 bytes, over 64 candidates, evidence
+    spans outside 1–8, aliases over 16, and label/name/alias/description length and
+    control-character bounds;
+11. a fully valid, empty `entries` array produces a real artifact with zero candidates, not an error;
+12. `candidateDigest`/`rawOutputDigest`/`artifactDigest` are SHA-256 over the documented versioned
+    length-prefixed encoding; identical input plus identical raw output yields byte-identical digests
+    across repeated calls; changing one candidate field, the raw output text, or the bound
+    baseline/source changes the corresponding digest(s);
+13. two candidates whose shortened `bootstrap_ai_<kind>_<first-32-hex>` IDs collide fail the whole
+    artifact closed even when their full digests differ;
+14. provider unavailability, a thrown provider error, and an HTTP-shaped failure the injected
+    provider surfaces each reject with no fallback/placeholder artifact — never a "successful" empty
+    artifact standing in for a real failure;
+15. `refineBootstrapManifest()` never mutates its `baseline` or `sourceDocuments` arguments
+    (frozen-input assertions), and adjacent B2/B3/B3d/`hermesProvider`/`stage1`/`stage2` suites stay
+    green.
+
+Deliberately not in B4a's RED gate, each reserved for its named later increment: additive merge into
+`BootstrapManifest`, suggested-edit attachment, any React component, any live HTTP route,
+idempotency/retry-ordinal transport, and any change reachable from `BootstrapReviewWorkspace.tsx` or
+`StoryEditor.tsx`.
 
 ## Post-B4 backlog — explicitly not part of B3c/B3d
 
