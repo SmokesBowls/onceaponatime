@@ -391,6 +391,101 @@ async function testSourceChangeStalesTheSessionRatherThanReapplyingOldDecisions(
 }
 
 // ---------------------------------------------------------------------------
+// A source change while the workspace stays open (no CLOSE/REOPEN) must not
+// let the review surface keep silently presenting decisions against evidence
+// that has already changed underneath it. It must not discard the session
+// (destroying author work) or silently regenerate it (transplanting old
+// decisions onto new evidence) either -- only disable authority controls and
+// require an explicit regenerate action.
+// ---------------------------------------------------------------------------
+
+async function testSourceChangeWhileOpenDisablesAuthorityUntilExplicitRegenerate() {
+  const { BootstrapReviewWorkspace } = await import('../src/components/BootstrapReviewWorkspace');
+  const originalProject = sourceOnlyProject();
+  let renderer: ReactTestRenderer;
+  const calls = callbackCalls();
+  await act(async () => { renderer = create(React.createElement(StoryEditor, storyEditorProps(originalProject, calls))); });
+  await begin(renderer!);
+
+  const approveButton = renderer!.root.findAllByType('button').find((b) => instanceText(b).trim() === 'APPROVE')!;
+  await act(async () => { await approveButton.props.onClick(); });
+  const decidedManifest = renderer!.root.findByType(BootstrapReviewWorkspace).props.manifest as BootstrapManifest;
+  assert.ok(decidedManifest.entries.some((entry) => entry.decision !== 'pending'));
+
+  // The source changes while the workspace is still open -- no CLOSE, no
+  // reopening BEGIN. An ordinary rerender is all that happens.
+  const changedProject = sourceOnlyProject({
+    text: 'Isla approached Falcon Ridge.\n\nA locked chest sat in the corner.',
+    sourceDocumentId: 'source_b3c_workspace',
+  });
+  await act(async () => {
+    renderer!.update(React.createElement(StoryEditor, storyEditorProps(changedProject, calls)));
+  });
+
+  assert.equal(
+    renderer!.root.findAllByType(BootstrapReviewWorkspace).length,
+    1,
+    'the workspace must stay mounted -- a source change must not silently discard the session',
+  );
+  const staleManifest = renderer!.root.findByType(BootstrapReviewWorkspace).props.manifest as BootstrapManifest;
+  assert.deepEqual(
+    staleManifest,
+    decidedManifest,
+    'a source change must not silently regenerate the manifest either -- the old artifact stays visible until an explicit regenerate',
+  );
+
+  const fullText = instanceText(renderer!.root);
+  assert.ok(
+    fullText.includes('Source changed') || fullText.toLowerCase().includes('regenerate structural review'),
+    'the stale state must be visibly announced to the author',
+  );
+  assert.ok(!fullText.includes('Ready to Apply'), 'a stale review must never claim to be ready to apply');
+
+  for (const label of ['APPROVE', 'EDIT', 'REJECT']) {
+    for (const button of renderer!.root.findAllByType('button').filter((b) => instanceText(b).trim() === label)) {
+      assert.equal(button.props.disabled, true, `${label} must be disabled while the review is stale`);
+    }
+  }
+  const povSelect = renderer!.root.findAllByProps({ 'data-role': 'pov-select' })[0];
+  const locationSelect = renderer!.root.findAllByProps({ 'data-role': 'current-location-select' })[0];
+  assert.equal(povSelect.props.disabled, true, 'POV assignment must be disabled while the review is stale');
+  assert.equal(locationSelect.props.disabled, true, 'current-location assignment must be disabled while the review is stale');
+
+  // Defense in depth: even a stray click somehow reaching the callback must
+  // not mutate the stale session.
+  const workspaceInstance = renderer!.root.findByType(BootstrapReviewWorkspace);
+  await act(async () => { workspaceInstance.props.onDecide(decidedManifest.entries[0].id, 'rejected'); });
+  assert.deepEqual(
+    renderer!.root.findByType(BootstrapReviewWorkspace).props.manifest,
+    decidedManifest,
+    'onDecide must be a no-op while stale, not merely hidden behind a disabled button',
+  );
+
+  const regenerateButton = renderer!.root.findAllByType('button').find(
+    (b) => /regenerate/i.test(instanceText(b)),
+  );
+  assert.ok(regenerateButton, 'a stale review must expose an explicit regenerate action');
+  await act(async () => { await regenerateButton!.props.onClick(); });
+
+  const regeneratedManifest = renderer!.root.findByType(BootstrapReviewWorkspace).props.manifest as BootstrapManifest;
+  assert.notEqual(
+    regeneratedManifest.boundSourceFingerprint,
+    decidedManifest.boundSourceFingerprint,
+    'regenerate must rebuild against the current (changed) source',
+  );
+  assert.ok(
+    regeneratedManifest.entries.every((entry) => entry.decision === 'pending'),
+    'regenerate must not transplant old decisions onto the new evidence artifact',
+  );
+  assert.ok(
+    !instanceText(renderer!.root).includes('Source changed'),
+    'after an explicit regenerate the stale notice must clear',
+  );
+
+  await act(async () => { renderer!.unmount(); });
+}
+
+// ---------------------------------------------------------------------------
 // Review complete display; composition stays locked; prepareBootstrap never
 // called anywhere reachable.
 // ---------------------------------------------------------------------------
@@ -471,6 +566,7 @@ async function run() {
   await testOrdinaryRerenderPreservesTheInProgressSession();
   await testCloseHidesWithoutDiscardingAndReopenRestoresTheSameSession();
   await testSourceChangeStalesTheSessionRatherThanReapplyingOldDecisions();
+  await testSourceChangeWhileOpenDisablesAuthorityUntilExplicitRegenerate();
   await testReviewCompleteDisplaysReadyToApplyWhileCompositionStaysLocked();
   await testPrepareBootstrapIsNeverReachableFromB3cSources();
   console.log('B3c review workspace UI/lifecycle contract regression passed');
