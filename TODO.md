@@ -18,7 +18,7 @@ B2 correction — Discovery-Quality Grammatical-Role Admission  ✅ done, pushed
         ↓
 B3c — Author Decisions + Explicit Assignments  ✅ done, not yet pushed (1a93177)
         ↓
-B3d — Atomic Canonical Admission  ← next (contract frozen, RED not yet written)
+B3d — Atomic Canonical Admission  ← next (contract + RED frozen, GREEN not yet implemented)
         ↓
 B4 — Optional AI Refinement
 ```
