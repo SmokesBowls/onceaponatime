@@ -337,6 +337,81 @@ old decisions silently reapplied to different source evidence. This is in-memory
 lifted above the panel's own mount/unmount, not a durable resume-after-reload feature -- see
 hard non-goals.
 
+#### B3c component architecture (design decision, settled before UI RED)
+
+`StructuralReviewPanel.tsx` stays exactly what B3b built: a read-only presentation component,
+forever. B3c does not mutate it into an authority panel -- it introduces a new, separate
+component whose job is explicitly different:
+
+```text
+StoryEditor
+   |
+   +-- owns BootstrapReviewSession
+   |      manifest
+   |      assignments
+   |      source identity/fingerprint
+   |      open/closed
+   |
+   +-- when open
+          |
+   BootstrapReviewWorkspace   <- NEW B3c component
+          |
+          +-- read-only proposal/evidence presentation
+          +-- APPROVE / EDIT / REJECT
+          +-- POV assignment
+          +-- current-location assignment
+```
+
+The mutable review session (manifest, assignments, source identity, open/closed) lives in
+`StoryEditor`, above `BootstrapReviewWorkspace`, not inside it -- this is what makes the
+settled in-progress-review-lifetime decision above actually hold: `CLOSE` unmounts/hides the
+workspace component, but the session state it reads from survives in the parent regardless of
+that component's own mount/unmount. Component lifecycle must never become accidental
+persistence policy.
+
+Domain decisions stay out of the visual component wherever practical -- the workspace only
+translates author intent into a call, it never re-implements B1's authority itself:
+
+```text
+UI intent ("author clicked APPROVE")
+        |
+B3c controller (bootstrapReview.ts pure functions)
+        |
+B1 decideBootstrapManifestEntry()
+        |
+new immutable manifest
+```
+
+`bootstrapReview.ts` (already required by the RED gate below for
+`assessBootstrapReviewReadiness()`) is where this controller logic lives: resolving which
+existing entries are eligible POV/current-location targets, and clearing a stale assignment
+after its target is rejected or re-edited. `BootstrapReviewWorkspace.tsx` renders what that
+logic reports and forwards author clicks to it -- it does not decide anything itself.
+
+EDIT is a bounded field-level transition, not an unconstrained JSON editor: the workspace only
+ever exposes the fields that already belong to the entry's existing proposal kind (an actor
+edit shows actor fields, a location edit shows location fields, and so on). Same-kind
+enforcement remains B1's job (`isProposalForKind`, already exercised in the frozen readiness
+tests) -- the bounded field set is a UI-level courtesy on top of that, not a replacement for it.
+
+**The one thing this supersedes.** B3b's own RED test banned `decideBootstrapManifestEntry()`
+from the *entire* `StoryEditor`-reachable graph -- correct for B3b's scope, but B3c
+intentionally makes it false by wiring `BootstrapReviewWorkspace` in alongside
+`StructuralReviewPanel`. That assertion is narrowed, not deleted: it now applies only to
+`StructuralReviewPanel.tsx`'s own reachable graph, which must still never reach decision
+authority. `prepareBootstrap()` stays banned across the *whole* `StoryEditor`-reachable graph,
+unchanged and unnarrowed -- that boundary belongs to B3d regardless of what B3c adds.
+
+```text
+B3b read-only panel remains read-only.
+B3c introduces a separate review workspace/controller.
+The B3b whole-StoryEditor decision-authority ban narrows to StructuralReviewPanel's own
+  boundary, not simply deleted.
+B3c may reach B1 decision authority (decideBootstrapManifestEntry, BootstrapAssignments).
+B3c may never reach B1 canonical-admission authority (prepareBootstrap, receipts,
+  canonical StoryProject mutation).
+```
+
 #### B3c RED gate
 
 Before production changes, commit focused failing tests proving:
@@ -387,6 +462,11 @@ Before production changes, commit focused failing tests proving:
 20. review completeness is a pure projection only -- it never normalizes, repairs, remaps,
     auto-selects, or otherwise changes the manifest or assignments it is given;
 21. no reachable B3c path imports or calls `prepareBootstrap()`.
+
+Items 3-16, 19-21 are pure decision/assignment/readiness logic, frozen in
+`tests/bootstrapReviewDecisions.test.ts`. Items 1, 2, 17, 18 depend on the component
+architecture above and are frozen separately in `tests/bootstrapReviewWorkspace.test.tsx`
+against the new `BootstrapReviewWorkspace` component, once that design was settled.
 
 **Origin finding.** No existing predicate answers even the narrow question "has the author
 finished deciding every entry and assigning both roles" independently of calling
