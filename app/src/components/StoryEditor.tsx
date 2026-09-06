@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useLayoutEffect, useRef, useState } from 'react';
 import {
   Play,
   Sparkles,
@@ -43,12 +43,13 @@ import {
   type BootstrapManifest,
   type BootstrapProposal,
 } from '../lib/bootstrapManifest';
-import { decideBootstrapReviewEntry } from '../lib/bootstrapReview';
+import { decideBootstrapReviewEntry, isBootstrapReviewComplete } from '../lib/bootstrapReview';
+import type { BootstrapReceipt } from '../lib/prepareBootstrap';
 import { BootstrapReviewWorkspace } from './BootstrapReviewWorkspace';
 
 /**
- * Compact, author-visible failure notice for the two Workbench operations that
- * previously failed silently (execution, promotion). Deliberately not a toast or
+ * Compact, author-visible failure notice for Workbench authority operations.
+ * Deliberately not a toast or
  * a general notification system: it is local state rendered inline, next to the
  * control whose operation actually failed.
  */
@@ -92,6 +93,11 @@ interface StoryEditorProps {
   onEditCandidateText: (text: string) => void;
   isGenerating: boolean;
   workbenchError: WorkbenchOperationError | null;
+  onApplyBootstrap: (
+    manifest: BootstrapManifest,
+    assignments: BootstrapAssignments,
+    transactionTimestamp: number,
+  ) => Promise<BootstrapReceipt>;
 }
 
 export const StoryEditor: React.FC<StoryEditorProps> = ({
@@ -107,6 +113,7 @@ export const StoryEditor: React.FC<StoryEditorProps> = ({
   onEditCandidateText,
   isGenerating,
   workbenchError,
+  onApplyBootstrap,
 }) => {
   const [operation, setOperation] = useState<OperatingMode>('CONTINUATION');
   const [distance, setDistance] = useState<NarrativeDistance>('BEAT');
@@ -123,15 +130,29 @@ export const StoryEditor: React.FC<StoryEditorProps> = ({
     assignments: BootstrapAssignments;
   } | null>(null);
   const [isReviewOpen, setIsReviewOpen] = useState(false);
+  const [isApplyingBootstrap, setIsApplyingBootstrap] = useState(false);
+  const [bootstrapReceipt, setBootstrapReceipt] = useState<BootstrapReceipt | null>(null);
+  const isApplyingBootstrapRef = useRef(false);
+  const applyAttemptRef = useRef(0);
+  const projectIdRef = useRef(project.id);
 
   const readiness = assessCompositionReadiness(project);
   const hasSubstantiveSource = (project.sourceDocuments ?? []).some(
     (document) => document.exactText.trim().length > 0,
   );
 
-  useEffect(() => {
+  useLayoutEffect(() => {
+    applyAttemptRef.current += 1;
+    projectIdRef.current = project.id;
+    isApplyingBootstrapRef.current = false;
+    setIsApplyingBootstrap(false);
     setReviewSession(null);
     setIsReviewOpen(false);
+    setBootstrapReceipt(null);
+    return () => {
+      applyAttemptRef.current += 1;
+      isApplyingBootstrapRef.current = false;
+    };
   }, [project.id]);
 
   const hasAnyActors = project.actors.length > 0;
@@ -229,6 +250,40 @@ export const StoryEditor: React.FC<StoryEditorProps> = ({
     setReviewSession((prev) => (
       prev ? { ...prev, assignments: { ...prev.assignments, currentLocationId: locationId } } : prev
     ));
+  };
+
+  const handleApplyBootstrap = async () => {
+    if (
+      reviewSession === null
+      || isReviewSessionStale
+      || !isBootstrapReviewComplete(reviewSession.manifest, reviewSession.assignments)
+      || isApplyingBootstrapRef.current
+    ) return;
+
+    isApplyingBootstrapRef.current = true;
+    setIsApplyingBootstrap(true);
+    const applyAttempt = ++applyAttemptRef.current;
+    const applyingProjectId = project.id;
+    try {
+      const receipt = await onApplyBootstrap(
+        reviewSession.manifest,
+        reviewSession.assignments,
+        Date.now(),
+      );
+      if (applyAttemptRef.current === applyAttempt && projectIdRef.current === applyingProjectId) {
+        setBootstrapReceipt(receipt);
+        setReviewSession(null);
+        setIsReviewOpen(false);
+      }
+    } catch {
+      // App owns the existing WorkbenchOperationError surface. Preserve the
+      // complete review session so the author can correct and retry it.
+    } finally {
+      if (applyAttemptRef.current === applyAttempt && projectIdRef.current === applyingProjectId) {
+        isApplyingBootstrapRef.current = false;
+        setIsApplyingBootstrap(false);
+      }
+    }
   };
 
   const activePov = project.actors.find((a) => a.id === activePovActorId(project));
@@ -779,6 +834,21 @@ export const StoryEditor: React.FC<StoryEditorProps> = ({
               <WorkbenchErrorNotice message={workbenchError.message} />
             )}
 
+            {bootstrapReceipt !== null && (
+              <div className="rounded border border-[#2D5A27]/40 bg-[#2D5A27]/10 p-3 space-y-2">
+                <div className="text-[10px] font-sans font-bold uppercase tracking-wider text-[#2D5A27]">
+                  Bootstrap Applied
+                </div>
+                <pre className="overflow-x-auto whitespace-pre-wrap text-[10px] text-[#1A1A1A]">
+                  {JSON.stringify(bootstrapReceipt, null, 2)}
+                </pre>
+              </div>
+            )}
+
+            {workbenchError && workbenchError.source === 'bootstrap' && (
+              <WorkbenchErrorNotice message={workbenchError.message} />
+            )}
+
             {readiness.ready ? (
               <button
                 onClick={handleRunFramework}
@@ -797,17 +867,38 @@ export const StoryEditor: React.FC<StoryEditorProps> = ({
                   </>
                 )}
               </button>
+            ) : isReviewOpen && reviewSession !== null && isApplyingBootstrap ? (
+              <div
+                role="status"
+                className="w-full rounded border border-[#1A1A1A]/20 bg-[#E5E2D9]/60 px-4 py-3 text-center text-xs font-sans font-bold uppercase tracking-[0.15em] text-[#5A554E]"
+              >
+                Applying reviewed bootstrap…
+              </div>
             ) : isReviewOpen && reviewSession !== null ? (
-              <BootstrapReviewWorkspace
-                manifest={reviewSession.manifest}
-                assignments={reviewSession.assignments}
-                isStale={isReviewSessionStale}
-                onDecide={handleDecideReviewEntry}
-                onAssignPovActor={handleAssignReviewPovActor}
-                onAssignCurrentLocation={handleAssignReviewCurrentLocation}
-                onRegenerate={regenerateReviewSession}
-                onClose={() => setIsReviewOpen(false)}
-              />
+              <div className="space-y-3">
+                <BootstrapReviewWorkspace
+                  manifest={reviewSession.manifest}
+                  assignments={reviewSession.assignments}
+                  isStale={isReviewSessionStale}
+                  onDecide={handleDecideReviewEntry}
+                  onAssignPovActor={handleAssignReviewPovActor}
+                  onAssignCurrentLocation={handleAssignReviewCurrentLocation}
+                  onRegenerate={regenerateReviewSession}
+                  onClose={() => setIsReviewOpen(false)}
+                />
+                {!isReviewSessionStale
+                  && isBootstrapReviewComplete(reviewSession.manifest, reviewSession.assignments)
+                  && (
+                    <button
+                      type="button"
+                      onClick={handleApplyBootstrap}
+                      disabled={isApplyingBootstrap}
+                      className="w-full rounded bg-[#2D5A27] px-4 py-3 text-xs font-sans font-bold uppercase tracking-[0.15em] text-[#FDFCF8] hover:bg-[#244A20] disabled:cursor-not-allowed disabled:opacity-50"
+                    >
+                      APPLY
+                    </button>
+                  )}
+              </div>
             ) : (
               <div className="w-full py-3.5 px-4 rounded bg-[#E5E2D9]/60 border border-[#1A1A1A]/20 text-center space-y-1.5">
                 <div className="flex items-center justify-center gap-2 text-[#5A554E] font-sans font-bold uppercase tracking-[0.15em] text-xs">

@@ -38,6 +38,8 @@ import {
   canDispatchFrameworkExecution,
   NARRATIVE_STRUCTURE_UNESTABLISHED_MESSAGE,
 } from './lib/compositionReadiness';
+import type { BootstrapAssignments, BootstrapManifest } from './lib/bootstrapManifest';
+import { prepareBootstrap, type BootstrapReceipt } from './lib/prepareBootstrap';
 
 export default function App() {
   const [projects, setProjects] = useState<StoryProject[]>(DEFAULT_PROJECTS);
@@ -92,6 +94,11 @@ export default function App() {
 
   const handleCancelIntake = () => {
     setShowIntakeModal(false);
+  };
+
+  const handleSelectProject = (projectId: string) => {
+    setActiveProjectId(projectId);
+    setWorkbenchError(null);
   };
 
   const handleSubmitIntake = (submission: ManuscriptIntakeSubmission) => {
@@ -206,6 +213,22 @@ export default function App() {
     });
     const data = await res.json();
     return data.prose || 'No response from naked model.';
+  };
+
+  const handleApplyBootstrap = async (
+    manifest: BootstrapManifest,
+    assignments: BootstrapAssignments,
+    transactionTimestamp: number,
+  ): Promise<BootstrapReceipt> => {
+    setWorkbenchError(null);
+    try {
+      const prepared = prepareBootstrap(activeProject, manifest, assignments, transactionTimestamp);
+      updateActiveProject(prepared.nextProject);
+      return prepared.bootstrapReceipt;
+    } catch (err) {
+      setWorkbenchError(workbenchOperationError('bootstrap', err));
+      throw err;
+    }
   };
 
   // Accept Candidate and Promote to Story Canon Transactionally
@@ -551,7 +574,7 @@ export default function App() {
         <Header
           projects={projects}
           activeProject={activeProject}
-          onSelectProject={setActiveProjectId}
+          onSelectProject={handleSelectProject}
           onNewProject={handleOpenIntake}
           activeTab={activeTab}
           onSelectTab={setActiveTab}
@@ -583,6 +606,7 @@ export default function App() {
               onEditCandidateText={handleEditCandidateText}
               isGenerating={isGenerating}
               workbenchError={workbenchError}
+              onApplyBootstrap={handleApplyBootstrap}
             />
           )}
 

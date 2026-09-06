@@ -87,6 +87,7 @@ function storyEditorProps(project: StoryProject, calls = callbackCalls()): React
     onEditCandidateText: () => { calls.editCandidate += 1; },
     isGenerating: false,
     workbenchError: null,
+    onApplyBootstrap: async () => { throw new Error('B3b fixture must never apply bootstrap'); },
   };
 }
 

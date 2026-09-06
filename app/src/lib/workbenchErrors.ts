@@ -2,8 +2,8 @@ import type { ValidationReport } from '../types';
 
 /**
  * Extracts a useful, author-facing message from a caught error/rejection of
- * unknown shape. Framework execution and promotion both fail closed with a
- * real Error carrying a specific reason (see HERMES_INFERENCE_CONTRACT.md);
+ * unknown shape. Framework execution, promotion, and bootstrap fail closed
+ * with a real Error carrying a specific reason (see HERMES_INFERENCE_CONTRACT.md);
  * this only has to stay honest when something throws a non-Error value.
  */
 export function describeOperationFailure(err: unknown): string {
@@ -12,7 +12,7 @@ export function describeOperationFailure(err: unknown): string {
   return 'An unknown error occurred.';
 }
 
-export type WorkbenchOperationSource = 'execute' | 'promote';
+export type WorkbenchOperationSource = 'execute' | 'promote' | 'bootstrap';
 
 export interface WorkbenchOperationError {
   readonly source: WorkbenchOperationSource;
