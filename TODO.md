@@ -20,7 +20,7 @@ B3c — Author Decisions + Explicit Assignments  ✅ done, pushed (1a93177)
         ↓
 B3d — Atomic Canonical Admission  ✅ done, not yet pushed (14d86e2)
         ↓
-B4 — Optional AI Refinement  ← split into B4a/B4b/B4c/B4d; B4a contract drafted, awaiting RED
+B4 — Optional AI Refinement  ← split into B4a/B4b/B4c/B4d; B4a ✅ done, not yet pushed (ded2db7)
 ```
 
 ### B2 — Deterministic Bootstrap Discovery ✅ shipped
@@ -1139,7 +1139,7 @@ separate checkpoints; no B4 production implementation is authorized by this draf
 - No B3d canonical admission or identity-resolution semantic changes. B4 only extends the existing
   receipt projection with immutable provenance after the same admission rules succeed.
 
-#### B4a — Hermes Refinement Artifact Boundary  ← first B4 increment, contract drafted; awaiting RED
+#### B4a — Hermes Refinement Artifact Boundary  ✅ shipped (contract 014e7f2/f44d909, RED 83ab7b1, GREEN ded2db7)
 
 **Scope.** B4a produces exactly one thing: given an eligible baseline `BootstrapManifest` and its
 bound `AuthorSourceDocument[]`, call Hermes once through a receipt-bearing provider and return a

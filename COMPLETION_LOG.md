@@ -301,4 +301,48 @@ panel, Accept/Reject flow) — never started, out of scope for every slice since
 
 **Committed at `14d86e2`; not yet pushed to `origin/main`.**
 
-**Not yet done:** B4 optional AI refinement. See `TODO.md`.
+## B4a -- Hermes Refinement Artifact Boundary
+
+B4 was split into four independently frozen/RED/GREEN increments (B4a/B4b/B4c/B4d) rather than
+one monolithic RED gate, for the same reason B3c was split into decision-logic and workspace/
+lifecycle: a single failure would otherwise be hard to localize. B4a is the first increment --
+see `TODO.md`'s "B4 split into four increments" and "B4a -- Hermes Refinement Artifact Boundary"
+sections for the full contract.
+
+- Frozen the split/scope decision and B4a's own contract in `014e7f2`, then a tiny prose
+  correction in `f44d909`: writing the RED gate had already settled on
+  `refineBootstrapManifest(baseline, provider?)` with no independent `sourceDocuments` argument
+  (since `BootstrapManifest.boundSourceDocuments` is already the exact bound source) -- a
+  stronger boundary than the master contract's prose, which still described a two-argument
+  signature. Corrected the prose to match before GREEN so there was no discrepancy between what
+  was frozen in tests and what was frozen in docs.
+- RED (`83ab7b1`) froze `tests/bootstrapRefinementArtifact.test.ts` against two not-yet-existing
+  modules -- genuine `ERR_MODULE_NOT_FOUND` RED, matching the B2/B3d precedent -- covering all 15
+  points of B4a's contract via injected fake `ReceiptBearingModelProvider`s, no live network call.
+- GREEN (`ded2db7`) adds `src/lib/bootstrapRefinement.ts` (pure, browser-safe: types, eligibility,
+  a real recursive-descent duplicate-key-detecting JSON parser, closed structural/UTF-16
+  coordinate validation, identity-collision detection) and `server/bootstrapRefinement.ts`
+  (server-only: prompt construction from `baseline`/`baseline.boundSourceDocuments` alone,
+  SHA-256 digesting, `refineBootstrapManifest()` shaped like `planNarrativeBeat()`/
+  `renderNarrativeProse()`). Neither file is reachable from B2/B3/B3d (confirmed by RED's static
+  reachable-import-graph scan). No additive merge, UI, live HTTP route, or idempotency/retry
+  transport was added -- all explicitly deferred to B4b/B4c.
+- A fresh, independent adversarial review (no exposure to the implementation reasoning) found and
+  this same commit fixed two real bugs before landing: a fixed-key-count check made
+  `description_summary` effectively required on every `location_proposal` candidate rather than
+  genuinely optional, rejecting an entire refinement output whenever a location candidate
+  legitimately omitted it (fixed via a required-vs-optional key check instead of an exact-count
+  one); and the hand-rolled JSON parser built parsed objects as plain `{}` literals, so a
+  `"__proto__"` key silently reassigned the object's prototype instead of becoming a real own
+  property -- invisible to `Object.keys()`/`hasOwnProperty`, evading both duplicate-key detection
+  and every downstream exact-key-set check (fixed via `Object.create(null)` for every parsed
+  object). Both fixes were verified against the reviewer's exact repro cases.
+- Verified: full `npm test`, `tsc --noEmit`, production build, and `git diff --check` all pass. No
+  control-byte corruption in either new file (checked byte-for-byte after every edit -- an
+  authoring failure mode this slice hit twice while writing escape sequences, caught before any
+  gate ran).
+
+**Committed at `ded2db7`; not yet pushed to `origin/main`.**
+
+**Not yet done:** B4b (Refinement Merge), B4c (Optional Refinement UI + Lifecycle), B4d
+(End-to-End Authority Proof). See `TODO.md`.
