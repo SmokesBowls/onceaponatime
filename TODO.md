@@ -233,6 +233,23 @@ See `COMPLETION_LOG.md` for the full record.
 - Enters as *another proposal source* feeding B1's manifest — never a replacement for the
   deterministic pass, never establishes truth directly.
 
+## Post-B4 backlog — explicitly not part of B3c/B3d
+
+These are later architectural additions to preserve for future design. They do **not** expand,
+compete with, or block B3c/B3d, and they are not part of the B4 implementation slice.
+
+- **Advisory continuity audit.** Add a periodic or on-demand review-and-report operation that
+  examines accepted narrative state for possible continuity problems and produces evidence-backed
+  findings for author review. It follows B4's authority principle: the audit is another proposal
+  source only, never establishes truth directly, never auto-fixes canon, and never mutates canonical
+  state as a side effect. Any suggested correction must return through the normal explicit review
+  and authority path.
+- **Structured pacing state.** Add an explicit schema-level representation for narrative pacing
+  and planned progression — e.g. current act, current arc, escalation ladder, open threads, and
+  what is approaching or due for payoff. This is distinct from entity state and knowledge
+  boundaries: it describes where the story is within its planned dramatic structure, not what is
+  objectively true in-world. Treat this as a later schema/design task, not a B3c/B3d extension.
+
 ## Recorded, deliberately deferred (found during review, out of scope where found)
 
 - **`src/lib/bootstrapDiscovery.ts`'s role-aware admission (`398033e`) has three known
