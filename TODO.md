@@ -539,19 +539,33 @@ gate to be drafted once B3c ships.
 ## Post-B4 backlog — explicitly not part of B3c/B3d
 
 These are later architectural additions to preserve for future design. They do **not** expand,
-compete with, or block B3c/B3d, and they are not part of the B4 implementation slice.
+compete with, or block B3c/B3d, and they are not part of the B4 implementation slice. Both
+items below were also independently surfaced reading Novella AI Novel Forge's actual generator
+source (`novela-code.html`, not marketing material) for outside inspiration -- worth noting its
+architecture is LLM-authored-and-trusted at every layer (its "Bible" is free-text markdown an
+LLM writes with nothing verified against source evidence; its "Story State" is an
+LLM-regenerated text block after every chapter), structurally less rigorous than this project's
+deterministic-evidence + explicit-author-authority chain (B1-B3d) -- not a model to imitate
+wholesale, just a source for these two specific ideas.
 
 - **Advisory continuity audit.** Add a periodic or on-demand review-and-report operation that
   examines accepted narrative state for possible continuity problems and produces evidence-backed
   findings for author review. It follows B4's authority principle: the audit is another proposal
   source only, never establishes truth directly, never auto-fixes canon, and never mutates canonical
   state as a side effect. Any suggested correction must return through the normal explicit review
-  and authority path.
+  and authority path. (Novella re-checks recent chapters against its Bible/state every ~8 chapters
+  and folds a findings report -- contradictions, knowledge leaks, dangling setups, timeline slips --
+  back into subsequent generation; this project only validates at generation time
+  (`validateCandidateProse`) and tracks per-entity reliability progressively (`codexEngine.ts`),
+  with nothing doing a holistic look-back over already-canonical chapters.)
 - **Structured pacing state.** Add an explicit schema-level representation for narrative pacing
   and planned progression — e.g. current act, current arc, escalation ladder, open threads, and
   what is approaching or due for payoff. This is distinct from entity state and knowledge
   boundaries: it describes where the story is within its planned dramatic structure, not what is
   objectively true in-world. Treat this as a later schema/design task, not a B3c/B3d extension.
+  (Novella tracks act/arc/an "escalation ladder"/open threads/what's "due for payoff soon" as
+  first-class state; this project's `StoryProject.threads[]` tracks open/closed but nothing about
+  pacing, escalation, or payoff timing -- a real gap, but well outside B3c/B3d's scope.)
 
 ## Recorded, deliberately deferred (found during review, out of scope where found)
 
@@ -632,29 +646,6 @@ compete with, or block B3c/B3d, and they are not part of the B4 implementation s
 - HTTP integration coverage for the `/api/framework/execute` Stage 2 artifact round-trip
   (server response shape, validation input, browser-side re-freezing).
 - Explicit proof that Stage 2 rendering does not mutate its input `GenerationContext`.
-
-## Ideas from external research (not scheduled)
-
-Surfaced reading Novella AI Novel Forge's actual generator source (`novela-code.html`) --
-not marketing material. Its architecture is LLM-authored-and-trusted at every layer (its
-"Bible" is free-text markdown an LLM writes and nothing verifies against source evidence;
-its "Story State" is an LLM-regenerated text block after every chapter) -- structurally
-less rigorous than this project's deterministic-evidence + explicit-author-authority chain
-(B1-B3d), not a model to imitate wholesale. Two mechanisms it has that this project doesn't
-are worth keeping in mind for later, unscheduled:
-
-- **Periodic advisory continuity audit.** Novella re-checks recent chapters against its
-  Bible/state every ~8 chapters and folds a findings report (contradictions, knowledge
-  leaks, dangling setups, timeline slips) back into subsequent generation. This project
-  only validates at generation time (`validateCandidateProse`) and tracks per-entity
-  reliability progressively (`codexEngine.ts`); nothing does a holistic look-back over
-  already-canonical chapters. If ever pursued, it must follow B4's existing rule: a
-  proposal/report source an author reviews, never an auto-applied fix.
-- **Structured pacing state.** Novella tracks act/arc/an "escalation ladder"/open threads/
-  what's "due for payoff soon" as first-class state. This project has no equivalent --
-  `StoryProject.threads[]` tracks open/closed but nothing about pacing, escalation, or
-  payoff timing. A real gap, but a schema-level addition affecting generation context
-  compilation, well outside B3c/B3d's scope.
 
 ## Not yet decided
 
