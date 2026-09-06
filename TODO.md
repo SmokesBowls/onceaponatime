@@ -16,9 +16,9 @@ B3b — Read-Only Structural Review Presentation  ✅ done, pushed (688fc39)
         ↓
 B2 correction — Discovery-Quality Grammatical-Role Admission  ✅ done, pushed (398033e)
         ↓
-B3c — Author Decisions + Explicit Assignments  ← next (contract frozen, RED not yet written)
+B3c — Author Decisions + Explicit Assignments  ✅ done, not yet pushed (1a93177)
         ↓
-B3d — Atomic Canonical Admission
+B3d — Atomic Canonical Admission  ← next
         ↓
 B4 — Optional AI Refinement
 ```
@@ -222,7 +222,15 @@ coverage gaps (compound subjects, possessive/appositive place-attribution, passi
 all fail closed, no false positives) recorded below in "Recorded, deliberately deferred."
 See `COMPLETION_LOG.md` for the full record.
 
-### B3c — Author Decisions + Explicit Assignments ← next
+### B3c — Author Decisions + Explicit Assignments ✅ shipped
+
+**Shipped:** frozen RED contracts in `96035b7` (decisions/readiness) and `27e9892`
+(workspace/lifecycle); GREEN in `1a93177` (`src/lib/bootstrapReview.ts`,
+`src/components/BootstrapReviewWorkspace.tsx`, `StoryEditor.tsx` wiring). An independent
+adversarial review found and this commit fixed two real bugs (a duplicate-id collision
+between two independently edited entries, and a missing defense-in-depth guard against
+deciding an unsupported entry) before it landed; see `COMPLETION_LOG.md` for the full
+record. Kept below as the frozen contract this slice was built against.
 
 B3c turns B3b's read-only snapshot into something an author can actually act on, without
 touching the atomic admission boundary that belongs to B3d:
@@ -544,6 +552,29 @@ compete with, or block B3c/B3d, and they are not part of the B4 implementation s
 
 ## Recorded, deliberately deferred (found during review, out of scope where found)
 
+- **B3c review sessions don't detect a source change while the workspace stays open**
+  (`1a93177`). `StoryEditor`'s staleness check (`sourceDocumentsAreIdentical()`) only
+  runs inside `handleBeginStructuralReview`, so editing the source while the panel is
+  already open leaves the stale manifest/decisions visible until the next `BEGIN` click.
+  Not a safety issue -- `prepareBootstrap()` independently re-validates source identity
+  at commit time in B3d regardless of what the review UI shows -- but a real gap against
+  the "never silently reapply old decisions to new evidence" intent. Would need a
+  `useEffect` watching source identity while a session is open; deferred rather than
+  expanding B3c's frozen scope to add it now.
+- **Re-approving an entry after an earlier edit reverts to its original proposed value**,
+  silently dropping the intermediate edited value. This is existing B1
+  `resolveAdmittedBootstrapProposal()` behavior (`prepareBootstrap.ts`), not introduced by
+  B3c -- `decision === 'approved'` always returns `entry.proposed`, never a prior
+  `entry.admitted` -- just never documented anywhere before now.
+- **The reachable-graph tests' `prepareBootstrap()` ban is a source-text regex**, which a
+  deliberately obscure re-export alias (`export { prepareBootstrap as x } from
+  './prepareBootstrap'`) would evade undetected. Confirmed via direct regex testing in
+  `1a93177`'s adversarial review; nothing in the shipped code does this. A real import-graph
+  tool or an ESLint `no-restricted-imports` rule would close this properly; not urgent.
+- **Minor UX dead-end**: if `project.sourceDocuments` becomes all-blank while the B3c
+  workspace is open, `isReviewOpen` doesn't reset (only `project.id` changing does), but
+  the `BEGIN STRUCTURAL REVIEW` button (gated on `hasSubstantiveSource`) disappears --
+  closing the workspace then leaves no way to reopen it. Not a data-safety issue.
 - **`src/lib/bootstrapDiscovery.ts`'s role-aware admission (`398033e`) has three known
   coverage gaps**, all confirmed to fail closed (nothing promoted) rather than
   reproducing the false-positive pattern the fix targeted:

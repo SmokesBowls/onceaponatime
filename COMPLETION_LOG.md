@@ -210,5 +210,55 @@ panel, Accept/Reject flow) — never started, out of scope for every slice since
 
 **Pushed to `origin/main` at `398033e`.**
 
-**Not yet done:** B3c author decisions and assignments, B3d atomic admission, and B4
-optional AI refinement. See `TODO.md`.
+## B3c — Author Decisions + Explicit Assignments
+
+- Frozen the decision/readiness contract in `96035b7` (pure logic: approve/edit/reject,
+  the six-branch review-completeness predicate, immutability, no confidence-based
+  auto-deciding) and the workspace/lifecycle contract in `27e9892` (control visibility,
+  POV/location selector scoping, the CLOSE-preserves/REOPEN-restores/source-change-stales
+  session lifecycle) -- both against real, not-yet-existing surface named in advance.
+- GREEN (`1a93177`) adds `src/lib/bootstrapReview.ts` (`assessBootstrapReviewReadiness()`/
+  `isBootstrapReviewComplete()` -- "review complete" means only that every entry is
+  decided and both assignments resolve to an admitted entry of the correct kind, never a
+  prediction of `prepareBootstrap()` success; `decideBootstrapReviewEntry()`, the
+  controller that applies a decision through B1's `decideBootstrapManifestEntry()` and
+  clears -- never remaps -- an assignment that pointed at what the entry resolved to
+  before the decision; `admittedEntityCandidates()`) and `src/components/
+  BootstrapReviewWorkspace.tsx` (APPROVE/EDIT/REJECT, REJECT-only for unsupported
+  entries, POV/current-location selects, a "Review Complete -- Ready to Apply" banner --
+  wrapping the unmodified, still-read-only `StructuralReviewPanel.tsx` for evidence
+  display rather than duplicating it).
+- `StoryEditor.tsx` owns the mutable review session (manifest + assignments) separately
+  from open/closed state, so `CLOSE` hides the workspace without discarding it; `BEGIN`
+  only rebuilds when `sourceDocumentsAreIdentical()` (bootstrapManifest.ts's own
+  documented primary freshness proof) says the bound source actually changed.
+- `prepareBootstrap.ts`'s private `admittedProposal()` was exported as
+  `resolveAdmittedBootstrapProposal()` so B3c's readiness/controller and B3d's real
+  admission share one resolution function instead of risking drift -- recorded as an
+  origin finding in `TODO.md` before GREEN.
+- A fresh, independent adversarial review (no exposure to the implementation reasoning)
+  targeted assignment invalidation, unsupported-entry controls, source changes, rerender
+  stability, repeated decision changes, ID-changing edits, and any path into
+  `prepareBootstrap()`. Found and this commit fixed two real, UI-reachable bugs before it
+  landed: two entries independently edited to the same working label collided on id with
+  no detection (fixed via a collision check at the id-minting site); the controller had
+  no defense-in-depth against deciding an unsupported entry (fixed to throw, mirroring
+  `resolveAdmittedBootstrapProposal()`'s own guard). Also fixed a doc-vs-implementation
+  deviation the review caught: the staleness check compared only a fingerprint where the
+  codebase's own documented convention calls for `sourceDocumentsAreIdentical()`.
+- Two findings were judged contract holes and deliberately left unfixed rather than baked
+  in undocumented -- recorded in `TODO.md`'s deliberately-deferred section: mid-session
+  source changes (while the workspace stays open, not just across close/reopen) aren't
+  detected until the next `BEGIN`; re-approving an entry after an earlier edit reverts to
+  its original proposed value (pre-existing B1 semantics, now documented). A third,
+  lower-priority note: the reachable-graph tests' `prepareBootstrap()` ban is a
+  source-text regex a deliberately obscure re-export alias could evade -- nothing today
+  does this.
+- Focused decision and workspace/lifecycle tests, B3b presentation, B3a, both B2 suites,
+  Bootstrap Manifest, Bootstrap State Honesty, Bootstrap/Promotion Interop, canonical
+  `npm test`, TypeScript lint, production build, and `git diff --check` all passed both
+  before and after the adversarial-review fixes.
+
+**Not yet pushed to `origin/main`** (local commits through `1a93177`).
+
+**Not yet done:** B3d atomic admission, and B4 optional AI refinement. See `TODO.md`.
