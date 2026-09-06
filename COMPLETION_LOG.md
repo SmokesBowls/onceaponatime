@@ -266,6 +266,39 @@ panel, Accept/Reject flow) — never started, out of scope for every slice since
   `npm test`, TypeScript lint, production build, and `git diff --check` all passed after
   the adversarial-review fixes and again after the staleness closeout.
 
-**Not yet pushed to `origin/main`** (local commits through `217d04f`).
+**Pushed to `origin/main`** (including the staleness closeout through `217d04f`).
 
-**Not yet done:** B3d atomic admission, and B4 optional AI refinement. See `TODO.md`.
+## B3d — Atomic Canonical Admission
+
+- Implemented the contract frozen in `50d0e4b` against the committed RED gate in `abe4301`
+  without changing `tests/bootstrapApply.test.tsx`.
+- `StoryEditor.tsx` now exposes APPLY only for a complete, fresh B3c review, passes the exact
+  current manifest and assignments with one click-time timestamp, replaces mutable review controls
+  with an applying status while the operation is in flight, and uses an immediate ref guard to
+  prevent a second invocation.
+- `App.tsx` is the single real `prepareBootstrap()` call site. It passes the current canonical
+  project unchanged, performs one full-project `updateActiveProject(nextProject)` only after
+  preparation returns successfully, and returns the authority-produced receipt unchanged.
+- Success retires the consumed in-memory review session and renders every receipt field from the
+  exact returned object. Failure retains the review artifact and routes the thrown message through
+  the existing `WorkbenchOperationError` / `WorkbenchErrorNotice` surface with source
+  `bootstrap`; no canonical write happens on the failure path.
+- Composition readiness remains a projection of the resulting canonical project. No unlocked
+  flag, duplicate admission validator, partial entity-write path, or B4/AI behavior was added.
+- The required `StoryEditor` callback boundary was propagated into the older B3b/B3c test-fixture
+  builders with fail-closed callbacks; the frozen B3d RED file itself remains byte-identical to
+  `abe4301`. Async completion is scoped to its originating project/session, and project selection
+  clears stale operation errors rather than showing one project's failure on another project.
+- Fresh independent spec review passed all 15 B3d requirements. Adversarial code-quality review
+  found and drove fixes for the required callback boundary, in-flight review mutation, late
+  cross-project completion, cross-project error leakage, and render-phase ref mutation under React
+  concurrent rendering; the final re-review reported no remaining critical or important issues.
+- Fresh verification passed: focused B3d apply contract; adjacent B3b/B3c, Bootstrap Manifest,
+  and composition-readiness contracts; canonical `npm test`; `tsc --noEmit`; production build;
+  and `git diff --check`. A self-cleaning ad-hoc React verifier also drove the two review-found
+  async cases: review authority controls are unavailable in flight, and a late completion from
+  project A neither clears project B's new review session nor displays project A's receipt.
+
+**Committed at `14d86e2`; not yet pushed to `origin/main`.**
+
+**Not yet done:** B4 optional AI refinement. See `TODO.md`.

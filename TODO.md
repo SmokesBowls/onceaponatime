@@ -16,9 +16,9 @@ B3b — Read-Only Structural Review Presentation  ✅ done, pushed (688fc39)
         ↓
 B2 correction — Discovery-Quality Grammatical-Role Admission  ✅ done, pushed (398033e)
         ↓
-B3c — Author Decisions + Explicit Assignments  ✅ done, not yet pushed (1a93177)
+B3c — Author Decisions + Explicit Assignments  ✅ done, pushed (1a93177)
         ↓
-B3d — Atomic Canonical Admission  ← next (contract + RED frozen, GREEN not yet implemented)
+B3d — Atomic Canonical Admission  ✅ done, not yet pushed (14d86e2)
         ↓
 B4 — Optional AI Refinement
 ```
@@ -514,7 +514,16 @@ throws and treating that as "does not resolve," never letting the exception esca
 - No AI/B4 work, confidence inference/ranking, schema expansion, Promotion Manifest work,
   facts, relationships, threads, mysteries, or continuity auditing.
 
-### B3d — Atomic Canonical Admission ← next
+### B3d — Atomic Canonical Admission ✅ shipped
+
+**Shipped:** the frozen contract in `50d0e4b` and RED gate in `abe4301` are GREEN in
+`14d86e2`. `StoryEditor.tsx` owns the explicit APPLY action, supplies the exact
+live B3c manifest/assignments plus one click-time timestamp, guards re-entrancy, preserves the
+review session on failure, retires it on success, and renders the exact returned receipt.
+`App.tsx` is the sole `prepareBootstrap()` call site and performs one atomic
+`updateActiveProject(nextProject)` only after preparation succeeds; bootstrap failures use the
+existing `WorkbenchOperationError` / `WorkbenchErrorNotice` path. No separate readiness flag or
+React-side admission validation was added. See `COMPLETION_LOG.md` for verification evidence.
 
 ```text
 B3c review-complete artifact
