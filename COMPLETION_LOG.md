@@ -246,19 +246,26 @@ panel, Accept/Reject flow) — never started, out of scope for every slice since
   `resolveAdmittedBootstrapProposal()`'s own guard). Also fixed a doc-vs-implementation
   deviation the review caught: the staleness check compared only a fingerprint where the
   codebase's own documented convention calls for `sourceDocumentsAreIdentical()`.
-- Two findings were judged contract holes and deliberately left unfixed rather than baked
-  in undocumented -- recorded in `TODO.md`'s deliberately-deferred section: mid-session
-  source changes (while the workspace stays open, not just across close/reopen) aren't
-  detected until the next `BEGIN`; re-approving an entry after an earlier edit reverts to
-  its original proposed value (pre-existing B1 semantics, now documented). A third,
-  lower-priority note: the reachable-graph tests' `prepareBootstrap()` ban is a
-  source-text regex a deliberately obscure re-export alias could evade -- nothing today
-  does this.
+- Two findings were judged contract holes rather than bugs to silently patch. One was
+  judged real enough to close immediately rather than defer: a source change while the
+  workspace stayed open (no CLOSE/REOPEN) went undetected until the next `BEGIN` --
+  `prepareBootstrap()` would still have caught it at commit in B3d, but the review
+  surface was temporarily misrepresenting what it was reviewing. Closed in `ec4431f`
+  (frozen RED) / `217d04f` (GREEN, passed on first attempt): `StoryEditor` now derives
+  staleness fresh on every render instead of only at `BEGIN`; while stale the artifact
+  stays fully visible (never silently discarded) but every authority control is disabled
+  and a "Source changed -- regenerate structural review before continuing." banner with
+  an explicit regenerate action is the only way to replace it (never silently
+  regenerated either). The other -- re-approving an entry after an earlier edit reverts
+  to its original proposed value (pre-existing B1 semantics, now documented) -- stays
+  deferred; recorded in `TODO.md`. A third, lower-priority note: the reachable-graph
+  tests' `prepareBootstrap()` ban is a source-text regex a deliberately obscure re-export
+  alias could evade -- nothing today does this.
 - Focused decision and workspace/lifecycle tests, B3b presentation, B3a, both B2 suites,
   Bootstrap Manifest, Bootstrap State Honesty, Bootstrap/Promotion Interop, canonical
-  `npm test`, TypeScript lint, production build, and `git diff --check` all passed both
-  before and after the adversarial-review fixes.
+  `npm test`, TypeScript lint, production build, and `git diff --check` all passed after
+  the adversarial-review fixes and again after the staleness closeout.
 
-**Not yet pushed to `origin/main`** (local commits through `1a93177`).
+**Not yet pushed to `origin/main`** (local commits through `217d04f`).
 
 **Not yet done:** B3d atomic admission, and B4 optional AI refinement. See `TODO.md`.

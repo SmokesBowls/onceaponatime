@@ -229,8 +229,11 @@ See `COMPLETION_LOG.md` for the full record.
 `src/components/BootstrapReviewWorkspace.tsx`, `StoryEditor.tsx` wiring). An independent
 adversarial review found and this commit fixed two real bugs (a duplicate-id collision
 between two independently edited entries, and a missing defense-in-depth guard against
-deciding an unsupported entry) before it landed; see `COMPLETION_LOG.md` for the full
-record. Kept below as the frozen contract this slice was built against.
+deciding an unsupported entry) before it landed. A small closeout in `ec4431f`/`217d04f`
+then closed the one finding judged a real gap against stated intent rather than future
+coverage: a source change while the workspace stayed open (no CLOSE/REOPEN) went
+undetected until the next `BEGIN`. See `COMPLETION_LOG.md` for the full record. Kept
+below as the frozen contract this slice was built against.
 
 B3c turns B3b's read-only snapshot into something an author can actually act on, without
 touching the atomic admission boundary that belongs to B3d:
@@ -552,15 +555,6 @@ compete with, or block B3c/B3d, and they are not part of the B4 implementation s
 
 ## Recorded, deliberately deferred (found during review, out of scope where found)
 
-- **B3c review sessions don't detect a source change while the workspace stays open**
-  (`1a93177`). `StoryEditor`'s staleness check (`sourceDocumentsAreIdentical()`) only
-  runs inside `handleBeginStructuralReview`, so editing the source while the panel is
-  already open leaves the stale manifest/decisions visible until the next `BEGIN` click.
-  Not a safety issue -- `prepareBootstrap()` independently re-validates source identity
-  at commit time in B3d regardless of what the review UI shows -- but a real gap against
-  the "never silently reapply old decisions to new evidence" intent. Would need a
-  `useEffect` watching source identity while a session is open; deferred rather than
-  expanding B3c's frozen scope to add it now.
 - **Re-approving an entry after an earlier edit reverts to its original proposed value**,
   silently dropping the intermediate edited value. This is existing B1
   `resolveAdmittedBootstrapProposal()` behavior (`prepareBootstrap.ts`), not introduced by
