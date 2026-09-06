@@ -1162,14 +1162,32 @@ validated, immutable `BootstrapRefinementArtifact`, or throw. It performs no add
   used on raw Hermes output text (`JSON.parse()` alone is insufficient per the master contract).
 - `server/bootstrapRefinement.ts` — server-only (may use `node:crypto`), mirroring
   `server/narrativePipeline.ts`'s orchestration convention. Builds the Hermes prompt from the exact
-  baseline manifest and source documents only; the SHA-256 digest functions
-  (`candidateDigest`/`rawOutputDigest`/`artifactDigest`) over the documented versioned
-  length-prefixed encoding; and `refineBootstrapManifest(baseline, sourceDocuments, provider?)`, the
+  baseline manifest and `baseline.boundSourceDocuments` only (see "B4a source authority" below); the
+  SHA-256 digest functions (`candidateDigest`/`rawOutputDigest`/`artifactDigest`) over the documented
+  versioned length-prefixed encoding; and `refineBootstrapManifest(baseline, provider?)`, the
   orchestrator shaped like `planNarrativeBeat()`/`renderNarrativeProse()`: checks eligibility, calls
   `provider.generateText({ operation: 'onceaponatime.bootstrap.refine', ... })` on a
   `ReceiptBearingModelProvider` (never the transitional `ModelProvider`/Gemini path), validates and
   digests the raw output via `src/lib/bootstrapRefinement.ts`, wraps the result with
   `createInferenceArtifact()`, and deep-freezes the payload and every nested candidate/citation.
+
+**B4a source authority.** `BootstrapManifest.boundSourceDocuments` is the sole source-document
+input to refinement:
+
+```text
+refineBootstrapManifest(
+  baseline: BootstrapManifest,
+  provider?: ReceiptBearingModelProvider,
+)
+```
+
+No independent `sourceDocuments` argument exists anywhere in B4a's public surface --
+`buildBootstrapRefinementPrompt()` compiles the Hermes prompt from `baseline` plus
+`baseline.boundSourceDocuments` alone, never a separately supplied document list. This is
+stronger than the general master-contract prose above ("exact bound source documents"): a
+caller cannot construct a request from a manifest bound to one source snapshot paired with a
+different, independently supplied `sourceDocuments` value -- the type boundary itself forecloses
+a manifest/source split-brain, rather than relying on a runtime equality check to catch it.
 
 **Explicitly deferred out of B4a** (named later increments, not abandoned):
 
@@ -1224,9 +1242,8 @@ validated, immutable `BootstrapRefinementArtifact`, or throw. It performs no add
 14. provider unavailability, a thrown provider error, and an HTTP-shaped failure the injected
     provider surfaces each reject with no fallback/placeholder artifact — never a "successful" empty
     artifact standing in for a real failure;
-15. `refineBootstrapManifest()` never mutates its `baseline` or `sourceDocuments` arguments
-    (frozen-input assertions), and adjacent B2/B3/B3d/`hermesProvider`/`stage1`/`stage2` suites stay
-    green.
+15. `refineBootstrapManifest()` never mutates its `baseline` argument (frozen-input assertions), and
+    adjacent B2/B3/B3d/`hermesProvider`/`stage1`/`stage2` suites stay green.
 
 Deliberately not in B4a's RED gate, each reserved for its named later increment: additive merge into
 `BootstrapManifest`, suggested-edit attachment, any React component, any live HTTP route,
