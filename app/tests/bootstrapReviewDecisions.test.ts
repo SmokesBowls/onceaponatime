@@ -413,8 +413,12 @@ function testReadinessNeverAutoSelectsOrRepairsAnything() {
 function testReadinessModuleNeverCallsPrepareBootstrap() {
   const path = fileURLToPath(new URL('../src/lib/bootstrapReview.ts', import.meta.url));
   const source = readFileSync(path, 'utf8');
+  // Strip comments before checking: bootstrapReview.ts's docs legitimately
+  // discuss prepareBootstrap() in prose (why completeness isn't a success
+  // prediction) -- only an actual call in code is forbidden.
+  const code = source.replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/.*$/gm, '');
   assert.ok(
-    !/\bprepareBootstrap\s*\(/.test(source),
+    !/\bprepareBootstrap\s*\(/.test(code),
     'bootstrapReview.ts may import resolveAdmittedBootstrapProposal but must never call prepareBootstrap() itself -- ' +
     'review completeness must never be established by actually attempting admission',
   );

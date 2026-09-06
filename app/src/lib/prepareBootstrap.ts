@@ -75,8 +75,17 @@ function failWrongProposal(entry: BootstrapManifestEntry): never {
  * harmless at commit time is an explicit `rejected`. This is a recorded,
  * deliberate cross-domain inconsistency with Promotion Manifest, not an
  * oversight -- see BOOTSTRAP_MANIFEST_ENGINEERING_REPORT.md.
+ *
+ * Exported (not merely used internally by prepareBootstrap()) so B3c's
+ * bootstrapReview.ts can determine what an entry actually resolves to
+ * without reimplementing this resolution independently -- see TODO.md's
+ * B3c "second origin finding". Both this function and prepareBootstrap()
+ * itself must always agree on what a given entry admits; that is the whole
+ * point of B3c's readiness never being described as predicting
+ * prepareBootstrap() success -- it uses the exact same resolution, just
+ * without prepareBootstrap()'s further domain validation.
  */
-function admittedProposal(entry: BootstrapManifestEntry): BootstrapProposal | undefined {
+export function resolveAdmittedBootstrapProposal(entry: BootstrapManifestEntry): BootstrapProposal | undefined {
   if (entry.decision === 'pending') {
     throw new Error(
       entry.supportedForApplication
@@ -147,7 +156,7 @@ function resolveBootstrapIdentities(
   const admittedIds = new Set<string>();
   for (const entry of manifest.entries) {
     if (!isBootstrapEntityProposalKind(entry.kind)) continue;
-    const admitted = admittedProposal(entry);
+    const admitted = resolveAdmittedBootstrapProposal(entry);
     if (admitted === undefined) continue;
     if (!isBootstrapEntityProposal(admitted)) failWrongProposal(entry);
     if (!isBootstrapEntityProposal(entry.proposed)) failWrongProposal(entry);
@@ -503,7 +512,7 @@ export function prepareBootstrap(
   const admittedByEntry = new Map<string, BootstrapProposal>();
 
   for (const entry of manifest.entries) {
-    const proposal = admittedProposal(entry);
+    const proposal = resolveAdmittedBootstrapProposal(entry);
     if (proposal === undefined) continue;
     applyEntityProposal(draft, entry, proposal, identities, canonicalKindById, appliedDescriptions);
     appliedEntryIds.push(entry.id);

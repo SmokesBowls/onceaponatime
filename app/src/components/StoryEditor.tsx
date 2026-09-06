@@ -35,8 +35,16 @@ import {
   NARRATIVE_STRUCTURE_UNESTABLISHED_MESSAGE,
 } from '../lib/compositionReadiness';
 import { discoverBootstrap } from '../lib/bootstrapDiscovery';
-import { buildBootstrapManifest, type BootstrapManifest } from '../lib/bootstrapManifest';
-import { StructuralReviewPanel } from './StructuralReviewPanel';
+import {
+  buildBootstrapManifest,
+  sourceDocumentsAreIdentical,
+  type BootstrapAssignments,
+  type BootstrapDecision,
+  type BootstrapManifest,
+  type BootstrapProposal,
+} from '../lib/bootstrapManifest';
+import { decideBootstrapReviewEntry } from '../lib/bootstrapReview';
+import { BootstrapReviewWorkspace } from './BootstrapReviewWorkspace';
 
 /**
  * Compact, author-visible failure notice for the two Workbench operations that
@@ -110,7 +118,11 @@ export const StoryEditor: React.FC<StoryEditorProps> = ({
   const [editingBeatContent, setEditingBeatContent] = useState('');
   const [nakedComparisonText, setNakedComparisonText] = useState<string | null>(null);
   const [isNakedLoading, setIsNakedLoading] = useState(false);
-  const [structuralReviewSnapshot, setStructuralReviewSnapshot] = useState<BootstrapManifest | null>(null);
+  const [reviewSession, setReviewSession] = useState<{
+    manifest: BootstrapManifest;
+    assignments: BootstrapAssignments;
+  } | null>(null);
+  const [isReviewOpen, setIsReviewOpen] = useState(false);
 
   const readiness = assessCompositionReadiness(project);
   const hasSubstantiveSource = (project.sourceDocuments ?? []).some(
@@ -118,7 +130,8 @@ export const StoryEditor: React.FC<StoryEditorProps> = ({
   );
 
   useEffect(() => {
-    setStructuralReviewSnapshot(null);
+    setReviewSession(null);
+    setIsReviewOpen(false);
   }, [project.id]);
 
   const hasAnyActors = project.actors.length > 0;
@@ -178,7 +191,35 @@ export const StoryEditor: React.FC<StoryEditorProps> = ({
   };
 
   const handleBeginStructuralReview = () => {
-    setStructuralReviewSnapshot(buildBootstrapManifest(project, discoverBootstrap(project)));
+    // sourceDocumentsAreIdentical() is bootstrapManifest.ts's own documented
+    // primary freshness proof; a fingerprint is a lossy 32-bit hash never
+    // meant to be relied on alone (see its own doc comment).
+    const currentSourceDocuments = project.sourceDocuments ?? [];
+    const isStale = !reviewSession
+      || !sourceDocumentsAreIdentical(reviewSession.manifest.boundSourceDocuments, currentSourceDocuments);
+    if (isStale) {
+      setReviewSession({
+        manifest: buildBootstrapManifest(project, discoverBootstrap(project)),
+        assignments: { activePovActorId: null, currentLocationId: null },
+      });
+    }
+    setIsReviewOpen(true);
+  };
+
+  const handleDecideReviewEntry = (entryId: string, decision: BootstrapDecision, admitted?: BootstrapProposal) => {
+    setReviewSession((prev) => (
+      prev ? decideBootstrapReviewEntry(prev.manifest, prev.assignments, entryId, decision, admitted) : prev
+    ));
+  };
+
+  const handleAssignReviewPovActor = (actorId: string | null) => {
+    setReviewSession((prev) => (prev ? { ...prev, assignments: { ...prev.assignments, activePovActorId: actorId } } : prev));
+  };
+
+  const handleAssignReviewCurrentLocation = (locationId: string | null) => {
+    setReviewSession((prev) => (
+      prev ? { ...prev, assignments: { ...prev.assignments, currentLocationId: locationId } } : prev
+    ));
   };
 
   const activePov = project.actors.find((a) => a.id === activePovActorId(project));
@@ -747,10 +788,14 @@ export const StoryEditor: React.FC<StoryEditorProps> = ({
                   </>
                 )}
               </button>
-            ) : structuralReviewSnapshot !== null ? (
-              <StructuralReviewPanel
-                manifest={structuralReviewSnapshot}
-                onClose={() => setStructuralReviewSnapshot(null)}
+            ) : isReviewOpen && reviewSession !== null ? (
+              <BootstrapReviewWorkspace
+                manifest={reviewSession.manifest}
+                assignments={reviewSession.assignments}
+                onDecide={handleDecideReviewEntry}
+                onAssignPovActor={handleAssignReviewPovActor}
+                onAssignCurrentLocation={handleAssignReviewCurrentLocation}
+                onClose={() => setIsReviewOpen(false)}
               />
             ) : (
               <div className="w-full py-3.5 px-4 rounded bg-[#E5E2D9]/60 border border-[#1A1A1A]/20 text-center space-y-1.5">
