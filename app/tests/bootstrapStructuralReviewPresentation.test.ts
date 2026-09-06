@@ -500,19 +500,36 @@ async function testReviewSurfaceExposesNoAuthorityControls() {
   assert.ok(!/\b(?:APPROVED|EDITED|REJECTED|ADMITTED)\b/i.test(markup));
   assert.ok(markup.includes('review assistance'));
 
-  const reachableSources = reachablePresentationSources([
+  // prepareBootstrap() remains forbidden across the WHOLE StoryEditor-reachable
+  // graph -- that boundary belongs to B3d and stays hard regardless of what B3c
+  // adds. decideBootstrapManifestEntry() is checked only against
+  // StructuralReviewPanel.tsx's OWN reachable graph, narrowed (not deleted) from
+  // its original StoryEditor-wide scope: B3c intentionally makes "no reachable
+  // decision authority anywhere in StoryEditor" false by wiring a *separate*
+  // BootstrapReviewWorkspace component in alongside this one -- see B3c's own
+  // reachable-graph assertions in bootstrapReviewWorkspace.test.tsx. What must
+  // stay permanently true is narrower and still meaningful: THIS read-only
+  // component, specifically, and whatever it itself imports, never reaches
+  // decision authority.
+  const storyEditorReachableSources = reachablePresentationSources([
     new URL('../src/components/StoryEditor.tsx', import.meta.url).pathname,
     new URL('../src/components/StructuralReviewPanel.tsx', import.meta.url).pathname,
   ]);
-  for (const [file, source] of reachableSources) {
+  for (const [file, source] of storyEditorReachableSources) {
     assert.ok(
       !/from\s+['"][^'"]*prepareBootstrap['"]|import\s*\(\s*['"][^'"]*prepareBootstrap['"]\s*\)/.test(source),
-      `B3b's reachable presentation graph must not import prepareBootstrap(): ${file}`,
+      `no source reachable from StoryEditor may import prepareBootstrap(): ${file}`,
     );
+  }
+
+  const panelOwnReachableSources = reachablePresentationSources([
+    new URL('../src/components/StructuralReviewPanel.tsx', import.meta.url).pathname,
+  ]);
+  for (const [file, source] of panelOwnReachableSources) {
     for (const importStatement of source.matchAll(/import[\s\S]*?from\s+['"][^'"]+['"];?/g)) {
       assert.ok(
         !/\bdecideBootstrapManifestEntry\b/.test(importStatement[0]),
-        `B3b's reachable presentation graph must not import decision authority: ${file}`,
+        `StructuralReviewPanel's own reachable graph must not import decision authority: ${file}`,
       );
     }
   }
