@@ -208,6 +208,10 @@ function assertNoAuthorityCallbacks(calls: CallbackCalls): void {
   assert.deepEqual(calls, callbackCalls(), 'review presentation must not invoke existing mutation/authority callbacks');
 }
 
+function stripComments(source: string): string {
+  return source.replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/.*$/gm, '');
+}
+
 function reachablePresentationSources(entryFiles: readonly string[]): Map<string, string> {
   const pending = [...entryFiles];
   const sources = new Map<string, string>();
@@ -516,9 +520,25 @@ async function testReviewSurfaceExposesNoAuthorityControls() {
     new URL('../src/components/StructuralReviewPanel.tsx', import.meta.url).pathname,
   ]);
   for (const [file, source] of storyEditorReachableSources) {
+    // Importing OTHER exports from prepareBootstrap.ts (e.g. B3c's
+    // resolveAdmittedBootstrapProposal, per TODO.md's recorded origin
+    // finding) is legitimate -- only the named import `prepareBootstrap`
+    // itself, and any call to it, are forbidden. A path-string check alone
+    // would false-positive on that legitimate import once it exists.
+    for (const importStatement of source.matchAll(/import\s*(\{[^}]*\}|\*\s+as\s+\w+|\w+)\s*from\s+['"][^'"]+['"];?/g)) {
+      assert.ok(
+        !/\bprepareBootstrap\b/.test(importStatement[1]),
+        `no source reachable from StoryEditor may import prepareBootstrap(): ${file}`,
+      );
+    }
+    // prepareBootstrap.ts's own declaration matches this same pattern -- it
+    // is expected to be reachable now (B3c legitimately imports
+    // resolveAdmittedBootstrapProposal from the same file) and defining
+    // itself is not the same thing as some other reachable file calling it.
+    if (file.endsWith('/prepareBootstrap.ts')) continue;
     assert.ok(
-      !/from\s+['"][^'"]*prepareBootstrap['"]|import\s*\(\s*['"][^'"]*prepareBootstrap['"]\s*\)/.test(source),
-      `no source reachable from StoryEditor may import prepareBootstrap(): ${file}`,
+      !/\bprepareBootstrap\s*\(/.test(stripComments(source)),
+      `no source reachable from StoryEditor may call prepareBootstrap(): ${file}`,
     );
   }
 
