@@ -18,7 +18,7 @@ B2 correction — Discovery-Quality Grammatical-Role Admission  ✅ done, pushed
         ↓
 B3c — Author Decisions + Explicit Assignments  ✅ done, not yet pushed (1a93177)
         ↓
-B3d — Atomic Canonical Admission  ← next
+B3d — Atomic Canonical Admission  ← next (contract frozen, RED not yet written)
         ↓
 B4 — Optional AI Refinement
 ```
@@ -514,21 +514,182 @@ throws and treating that as "does not resolve," never letting the exception esca
 - No AI/B4 work, confidence inference/ranking, schema expansion, Promotion Manifest work,
   facts, relationships, threads, mysteries, or continuity auditing.
 
-### B3d — Atomic Canonical Admission
+### B3d — Atomic Canonical Admission ← next
 
 ```text
-fully reviewed manifest
+B3c review-complete artifact
+manifest + assignments
+        ↓
+explicit APPLY action
         ↓
 prepareBootstrap()
         ↓
-atomic canonical admission
-        ↓
-receipt / visible error
+        +-- SUCCESS
+        |      atomic canonical project result
+        |      exact bootstrap receipt
+        |      composition readiness re-derived from project
+        |
+        +-- FAILURE
+               canonical project unchanged
+               review session retained
+               author-visible error
 ```
 
 B3d commits only a complete, explicitly reviewed (B3c-produced) manifest through B1's existing
-atomic `prepareBootstrap()` boundary and presents its receipt or error honestly. Contract/RED
-gate to be drafted once B3c ships.
+atomic `prepareBootstrap()` boundary and presents its receipt or error honestly.
+
+#### The real `prepareBootstrap()` surface (inspected before drafting this contract)
+
+```ts
+export function prepareBootstrap(
+  project: StoryProject,
+  manifest: BootstrapManifest,
+  assignments: BootstrapAssignments,
+  transactionTimestamp: number,
+): PreparedBootstrap
+```
+
+Four positional arguments, not three -- the caller must supply `transactionTimestamp`.
+`prepareBootstrap()` is deliberately deterministic (never calls `Date.now()` itself, per its own
+doc comment), so B3d's APPLY handler is the one place a real wall-clock read belongs.
+
+There is no success/failure result union. Success is a normal return of:
+
+```ts
+interface PreparedBootstrap {
+  readonly nextProject: StoryProject;
+  readonly preBootstrapSnapshot: StoryProject;
+  readonly bootstrapReceipt: BootstrapReceipt;
+}
+```
+
+Failure is a thrown plain `Error` (no custom error class distinguishing failure modes) --
+B3d's APPLY handler must be a try/catch around the call, never a `{ success, error }` check.
+
+```ts
+interface BootstrapReceipt {
+  readonly id: string;
+  readonly manifestId: string;
+  readonly projectId: string;
+  readonly boundSourceDocumentIds: readonly string[];
+  readonly boundSourceFingerprint: string;
+  readonly admissionFingerprint: string;
+  readonly assignments: { readonly activePovActorId: string; readonly currentLocationId: string };
+  readonly entries: readonly BootstrapReceiptEntry[]; // entryId, kind, decision, supportedForApplication, proposed, admitted, applied
+  readonly appliedEntryIds: readonly string[];
+  readonly unsupportedEntryIds: readonly string[];
+  readonly resultingProjectFingerprint: string;
+  readonly transactionTimestamp: number;
+}
+```
+
+**What `prepareBootstrap()` already independently re-validates** -- none of this is B3d's or
+B3c's to reimplement, and it is exactly why B3c's "review complete" was never allowed to claim
+admission validity:
+
+- source-identity staleness, via `sourceDocumentsAreIdentical()` -- the same function B3c's own
+  staleness check now uses, so a stale-source race between the UI's check and APPLY is still
+  caught here even if the UI's own check somehow missed it;
+- duplicate entity ids, checked against *canonical* project state, not just within the
+  manifest (`resolveBootstrapIdentities` throws `"...duplicate entity <id>"`) -- B3c's own
+  edit-id collision fix only ever checked within one manifest, never against already-canonical
+  entities, because it can't see them the way `prepareBootstrap()` does;
+- every sub-proposal reference (`initial_location_id`, `initial_holder_actor_id`,
+  `member_actor_ids`) resolves to an admitted or already-canonical entity of the right kind;
+- POV/current-location coherence (`enforcePovActorLocationCoherence`) -- an admitted POV actor
+  whose own `initial_location_id` contradicts the chosen scene location throws. B3c's readiness
+  has no equivalent check at all;
+- `assessCompositionReadiness(draft)` on the result, defensively, before ever returning it.
+
+**Existing plumbing B3d reuses rather than invents:**
+
+- `App.tsx`'s `updateActiveProject(updated: Partial<StoryProject>)` is already the one place
+  canonical project state gets replaced (`onSetPovActor`, promotion, etc. all go through it).
+  Passing the full `nextProject` through it is the atomic swap -- no new canonical-state
+  mechanism needed.
+- `src/lib/workbenchErrors.ts`'s `WorkbenchOperationError`/`workbenchOperationError()` and
+  `StoryEditor.tsx`'s existing `WorkbenchErrorNotice` component are already the author-visible
+  failure surface for exactly this kind of operation (`execute`/`promote`). `WorkbenchOperationSource`
+  needs a third value (e.g. `'bootstrap'`) added, not a parallel error-display mechanism.
+- `assessCompositionReadiness()` is already computed from the live `project` prop at the top of
+  `StoryEditor.tsx`. Once canonical state is swapped to `nextProject`, that existing computation
+  naturally re-derives `ready: true` -- there is no separate "unlocked" boolean to flip.
+
+#### B3d authority
+
+MAY:
+- render an explicit APPLY action when (and only when) B3c's review is complete
+  (`isBootstrapReviewComplete()`) and not stale;
+- call `prepareBootstrap(project, manifest, assignments, transactionTimestamp)` exactly once per
+  APPLY click, with the exact current canonical project, the exact B3c-reviewed manifest, and the
+  exact B3c assignments -- none reconstructed or approximated;
+- on success, replace canonical project state atomically via the existing `updateActiveProject()`
+  path, render the returned `bootstrapReceipt` exactly as returned, and retire the now-consumed
+  B3c review session (it must not remain applicable a second time);
+- on failure, surface the thrown error's message via the existing `WorkbenchOperationError`/
+  `WorkbenchErrorNotice` mechanism.
+
+MAY NOT:
+- auto-commit on review completion -- APPLY is always an explicit author action;
+- enable APPLY for a pending, incomplete, or stale review session;
+- reimplement any of `prepareBootstrap()`'s validation in React (staleness, duplicate ids,
+  reference resolution, POV/location coherence) -- it is the sole canonical-admission authority;
+- mutate canonical project state piecemeal (no per-actor/per-location/per-object writes in UI
+  code) -- only the one atomic `nextProject` swap;
+- change canonical project state, on any code path, before `prepareBootstrap()` has actually
+  returned successfully;
+- discard or clear the B3c review session on failure -- the author must be able to see and
+  correct their decisions, not start over;
+- construct, paraphrase, or partially render the receipt -- only the exact `bootstrapReceipt`
+  `prepareBootstrap()` returned;
+- flip a separate "composition unlocked" boolean -- unlocking happens only because
+  `assessCompositionReadiness()` re-derives `ready: true` from the actual resulting project;
+- allow a second APPLY click to fire while the previous one is still being applied.
+
+#### B3d RED gate
+
+Before production changes, commit focused failing tests proving:
+
+1. an incomplete review (per `isBootstrapReviewComplete()`) never renders APPLY as enabled;
+2. a stale review (per the B3c staleness check) never renders APPLY as enabled, even if the
+   underlying manifest would otherwise read as complete;
+3. a complete, non-stale review renders APPLY visible and enabled;
+4. an APPLY click calls `prepareBootstrap()` exactly once, never zero, never more than once;
+5. the exact current canonical project, the exact B3c-reviewed manifest, and the exact
+   B3c assignments are supplied -- none reconstructed, defaulted, or approximated;
+6. a successful result replaces canonical project state atomically (one `updateActiveProject()`
+   call carrying the complete `nextProject`, not a sequence of smaller mutations);
+7. the returned `bootstrapReceipt` is rendered exactly -- no field recomputed, reformatted into
+   a different shape, or partially displayed;
+8. `assessCompositionReadiness()` on the resulting project reports `ready: true` after a
+   successful apply, and nothing in B3d sets any separate unlocked flag to achieve this;
+9. a `prepareBootstrap()` failure (thrown `Error`) leaves the pre-existing canonical project
+   byte-for-byte untouched;
+10. a failure leaves the B3c review artifact (manifest + assignments) fully intact and still
+    interactable, not cleared or reset;
+11. a failure is visibly reported to the author via the existing `WorkbenchOperationError`/
+    `WorkbenchErrorNotice` mechanism, carrying the thrown error's actual message;
+12. no code path outside the single `prepareBootstrap()` call site can mutate canonical project
+    state as part of the bootstrap flow (static reachable-graph check, mirroring B3c's own);
+13. a second APPLY click while the first is still in flight cannot invoke `prepareBootstrap()`
+    a second time (an `isApplying`-style guard, mirroring `isGenerating`'s existing pattern for
+    Execute);
+14. a source change between B3c's own staleness check and the APPLY click is still independently
+    rejected by `prepareBootstrap()` itself (`sourceDocumentsAreIdentical()` re-checked inside
+    it) -- the UI's own stale-gating is not the only thing standing between a stale source and
+    a canonical write;
+15. a successful apply retires the consumed B3c review session -- reopening structural review
+    afterward starts a genuinely fresh session (a new `discoverBootstrap()` pass against the
+    now-different canonical state), never re-offering the same manifest for a second APPLY.
+
+#### B3d hard non-goals
+
+- No new validation logic duplicating any check `prepareBootstrap()` already performs.
+- No partial/piecemeal canonical mutation path, in this slice or reachable from it.
+- No new receipt display mechanism -- reuse the existing `WorkbenchOperationError`/
+  `WorkbenchErrorNotice` pattern, extending `WorkbenchOperationSource` with one new value.
+- No B4/AI work, no schema expansion, no changes to `prepareBootstrap()` itself beyond what
+  B3c's own `resolveAdmittedBootstrapProposal()` export already required.
 
 ### B4 — Optional AI Refinement
 - A Hermes operation (e.g. `onceaponatime.bootstrap.refine`), receipt-bearing, following
