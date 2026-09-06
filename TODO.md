@@ -20,7 +20,7 @@ B3c — Author Decisions + Explicit Assignments  ✅ done, pushed (1a93177)
         ↓
 B3d — Atomic Canonical Admission  ✅ done, not yet pushed (14d86e2)
         ↓
-B4 — Optional AI Refinement
+B4 — Optional AI Refinement  ← contract drafted; awaiting freeze + RED
 ```
 
 ### B2 — Deterministic Bootstrap Discovery ✅ shipped
@@ -728,11 +728,378 @@ error-carrying prop, no new display component.
 - No B4/AI work, no schema expansion, no changes to `prepareBootstrap()` itself beyond what
   B3c's own `resolveAdmittedBootstrapProposal()` export already required.
 
-### B4 — Optional AI Refinement
-- A Hermes operation (e.g. `onceaponatime.bootstrap.refine`), receipt-bearing, following
-  `HERMES_INFERENCE_CONTRACT.md`.
-- Enters as *another proposal source* feeding B1's manifest — never a replacement for the
-  deterministic pass, never establishes truth directly.
+### B4 — Optional AI Refinement  ← contract draft; not frozen, no RED/implementation yet
+
+#### Purpose
+
+B4 may ask Hermes for one optional, receipt-bearing refinement pass over a freshly generated,
+still-undecided deterministic bootstrap manifest. Its output is an additional proposal artifact
+that Onceaponatime validates and additively merges as new proposal entries and/or suggested edits in
+the same B1 `BootstrapManifest` consumed by the existing B3 review workspace.
+
+```text
+B2 deterministic discovery
+        ↓
+deterministic pending BootstrapManifest
+        ↓
+explicit optional REFINE WITH HERMES
+        ↓
+receipt-bearing refinement proposal artifact
+        ↓
+Onceaponatime validation + additive merge
+        ↓
+one combined pending BootstrapManifest
+        ↓
+same B3 review authority
+        ↓
+author approve / edit / reject
+        ↓
+same B3d atomic canonical admission
+```
+
+The invariant is:
+
+```text
+AI refinement = another proposal source
+
+AI refinement != canon
+AI refinement != replacement for B2
+AI refinement != automatic approval
+AI refinement != direct mutation
+AI refinement != a second review or admission path
+```
+
+#### Inspected existing surfaces this design must preserve
+
+- `discoverBootstrap(project)` is the deterministic, non-inference B2 producer. It returns
+  evidence-backed `BootstrapDiscoveryPayload` data and does not mutate the project.
+- `buildBootstrapManifest(project, discovery)` is B1's pure manifest builder. It binds the complete,
+  ordered source-document snapshot, starts every entry at `pending`, fingerprints proposal/evidence
+  content, and deep-freezes the result.
+- `BootstrapReviewWorkspace` plus `bootstrapReview.ts` own the one B3 author-decision and assignment
+  flow. They do not prepare or mutate canonical project state.
+- `prepareBootstrap()` remains the sole atomic canonical admission boundary.
+- `HermesProvider` is server-side, provider/model-neutral, receipt-bearing, and fail-closed under
+  `HERMES_INFERENCE_CONTRACT.md`. The browser must not call Hermes directly.
+- `InferenceArtifact<T>` and `InferenceReceipt` are the existing shared receipt vocabulary. B4 must
+  reuse them rather than create a bootstrap-only execution-receipt shape.
+
+#### Entry point and eligibility
+
+- B2 always runs first and produces the baseline deterministic manifest. Hermes never replaces,
+  suppresses, edits, reorders, or re-runs B2.
+- Refinement is explicit and optional. No project load, source import, `BEGIN STRUCTURAL REVIEW`,
+  regeneration, or APPLY action may invoke Hermes automatically.
+- `REFINE WITH HERMES` is available only while the current review session is fresh, every manifest
+  entry is still `pending`, both assignments are `null`, and that exact deterministic baseline has
+  not already completed a refinement pass.
+- A baseline with zero deterministic entries is still eligible: Hermes may propose evidence-backed
+  additions from the bound source text. It still receives a real deterministic baseline manifest,
+  not a bypass around B2.
+- Once any author decision or assignment exists, refinement is unavailable for that session. The
+  author may explicitly regenerate a fresh deterministic review session to discard work and begin
+  again; B4 does not silently reset author decisions.
+- At most one successful refinement artifact may be merged into one baseline manifest. Failure may
+  be retried against the exact unchanged baseline. AI-on-AI iterative refinement is out of scope.
+
+#### Hermes request boundary
+
+- The exact operation label is `onceaponatime.bootstrap.refine`.
+- A dedicated `ReceiptBearingModelProvider` selector may route this operation to `HermesProvider`;
+  it must not use the transitional receipt-optional `ModelProvider`/Gemini path.
+- The browser route request is a closed envelope containing only schema version, project ID, exact
+  current source documents, exact baseline manifest, the two explicitly null assignments,
+  `refinementSessionId`, retry ordinal, and idempotency key. It does not send the rest of
+  `StoryProject` or any canonical collections to Hermes or the model-visible prompt.
+- The server-side refinement function receives the immutable baseline `BootstrapManifest` and an
+  injectable receipt-bearing provider. It independently validates manifest structure and requires
+  every baseline entry to be `pending` with no `admitted` value before provider invocation.
+- The B4 route treats both browser JSON and model text as hostile. Before invocation it recursively
+  validates an exact-key-set baseline request (including nested proposals/evidence/source documents),
+  exact project/manifest/source identity, size/count bounds, pending-only state, null assignments,
+  and a non-hash review-session generation token. Existing permissive B1 guards are insufficient as
+  the sole HTTP-boundary parser and must not be represented as closed validation.
+- The B4 route is registered with a route-specific raw `application/json` body parser before the
+  app-wide `express.json()` decoder so duplicate request keys and invalid UTF-8 are still observable.
+  It rejects duplicate keys at every nesting level, trailing JSON values, and bodies over the existing
+  15 MiB transport cap. Within that cap, v1 accepts at most 128 current/bound source documents, 10,000
+  baseline entries, 64 evidence units per baseline entry, and 64 aliases per baseline proposal; it
+  checks safe-integer counts/offsets before loops or allocation. These are operation admission limits,
+  not truncation rules: an over-limit baseline fails visibly before Hermes runs.
+- The model-visible request contains only the exact bound source documents and the baseline's
+  deterministic proposal/evidence/rationale data needed for this task. It contains no canonical
+  mutation command, author decision, assignment, provider/model selection, credential, project
+  filesystem access, tool, skill, memory, or agent-session capability.
+- The request tells the model that source text is evidence, deterministic entries are proposals,
+  and its output is untrusted proposal material. Model prose, confidence, or rationale cannot
+  approve an entry or claim narrative truth.
+- Provider unavailability, failed/partial responses, malformed JSON, receipt-operation mismatch, or
+  operation-specific validation failure rejects the entire refinement attempt. There is no local,
+  deterministic, or plausible-looking fallback refinement.
+- Raw model bytes are parsed with duplicate-key-detecting JSON machinery before ordinary object
+  construction; `JSON.parse()` alone is not sufficient. The top-level key set is exactly `schema`,
+  `baseline_manifest_id`, `bound_source_fingerprint`, and `entries`.
+
+Each deterministic review session receives a cryptographically random `refinementSessionId` used
+only for operation correlation, never narrative identity. Each server attempt uses an idempotency key
+derived from that token and an explicit retry ordinal. A network timeout or ambiguous disconnect
+reuses the same key; the server returns/awaits the same in-flight or completed artifact and rejects
+the same key with different request bytes. Only an explicit terminal provider/validation failure may
+advance the retry ordinal against the unchanged baseline. The server keeps in-flight/completed
+reservations for its process lifetime; restart-level durable idempotency is out of scope and must not
+be claimed. "At most one success" means one artifact accepted into that live review session: client
+attempt/project/source tokens make any later competing result inert even if an upstream call ran.
+
+#### Raw model output and operation-specific validation
+
+The model returns one closed JSON value with:
+
+```text
+schema = "onceaponatime.bootstrap.refinement.v1"
+baseline_manifest_id = exact input manifest id
+bound_source_fingerprint = exact input source fingerprint
+entries = [] | one or more refinement candidates
+```
+
+Each raw candidate contains only:
+
+```text
+kind = actor_proposal | object_proposal | location_proposal | faction_proposal
+working_label = non-blank proposed label
+name = string | null
+aliases = string[]
+refines_entry_id = exact baseline entry id | null
+evidence = one or more { source_document_id, start_offset, end_offset }
+
+location_proposal alone may also contain:
+description_summary = non-blank string, or the key is absent
+```
+
+Rules:
+
+- B4 adds no proposal category and cannot make `fact_proposal` or `relationship_proposal`
+  applicable. Unsupported/unknown kinds reject the whole output.
+- This first B4 slice deliberately excludes topology-bearing proposal fields:
+  `initial_location_id`, `initial_holder_actor_id`, and `member_actor_ids`. AI additions cannot
+  create actor/location, holder, membership, canonical, or AI-to-AI reference edges. A later slice
+  would need its own reference-handle and author-review contract.
+- The model does not supply manifest-entry IDs, proposal entity IDs, canonical entity authority,
+  decisions, assignments, `supportedForApplication`, copied `exactText`, evidence-unit IDs,
+  fingerprints, digests, or receipts. `refines_entry_id` is a comparison target selected from IDs
+  the request displayed; it is not a model-owned identity and grants no mutation authority.
+- Offsets are zero-based, half-open JavaScript UTF-16 code-unit offsets, matching B1's existing
+  `String.slice()` replay semantics. They are not UTF-8 byte offsets or Unicode-scalar indices.
+- Onceaponatime resolves every evidence coordinate against the exact baseline-bound source string,
+  deterministically derives `exactText` and evidence-unit identity, and rejects unknown documents,
+  unsafe/non-integral/out-of-range offsets, `end_offset <= start_offset`, exact duplicate spans
+  within one candidate, and spans containing no Unicode letter or number. Overlapping non-identical
+  spans and reuse of a span by different candidates are preserved, not silently coalesced.
+- This proves a source-bound citation, not semantic entailment. Every candidate must retain at least
+  one such citation for the author to judge; no uncited "helpful" proposal is admitted.
+- `refines_entry_id !== null` must name one baseline deterministic entry of the same proposal kind.
+  It becomes an immutable *suggested edit* attached to that baseline entry, not a second manifest
+  entry and not an in-place rewrite. The baseline `proposed` value stays unchanged. The existing B3
+  author may explicitly choose the suggestion through the existing `edited` decision, further edit
+  it, or ignore it and approve/reject/edit the deterministic proposal normally. B4 never chooses.
+- `refines_entry_id === null` means an additional ordinary manifest proposal. Onceaponatime derives
+  a distinct proposal entity ID; model-supplied identity is never trusted. Duplicate/colliding AI
+  additions reject the whole refinement artifact rather than silently merging entities.
+- A suggested edit keeps the referenced proposal's existing entity ID inside suggestion metadata.
+  It does not create a duplicate proposed entry, avoiding B3d's deliberate rule that duplicate
+  *proposed* entity IDs fail even when one duplicate was rejected.
+- The strict parser accepts exactly the common keys above plus `description_summary` only for a
+  location. `name` and `refines_entry_id` are required but nullable; `aliases` and `evidence` are
+  required arrays; `description_summary` is absent or a string, never `null`. Unknown or duplicate
+  JSON keys, wrong primitive/container types, and non-finite numbers reject the whole raw output.
+- Resource limits are part of v1: raw UTF-8 output at most 262,144 bytes; at most 64 candidates;
+  1–8 evidence spans per candidate; at most 16 aliases; `working_label`, non-null `name`, and each
+  alias 1–200 UTF-16 code units after trimming; `description_summary` 1–2,000 UTF-16 code units after
+  trimming. Labels/names/aliases reject C0/C1 control characters; description text may contain TAB,
+  LF, and CR but no other C0/C1 controls. Exact accepted strings are preserved after validation—no
+  hidden case folding, Unicode normalization, trimming, or semantic rewriting.
+- An empty `entries` array is a valid completed refinement with a real receipt and means "Hermes
+  proposed no admissible additions or suggested edits." It does not erase the deterministic baseline.
+
+Onceaponatime computes SHA-256 over a versioned, length-prefixed UTF-8 encoding of the exact baseline
+source snapshot plus each validated candidate's ordered keys/values and evidence coordinates. No
+locale-sensitive serialization or object-key enumeration order participates. The full 64-hex digest
+is the candidate identity and artifact binding. Additional proposal IDs are
+`bootstrap_ai_<kind>_<first-32-hex>`; B4 evidence-unit IDs are
+`source-unit:b4:<first-32-hex-of-document-id/offsets/exact-text-digest>`. Full digests are retained
+beside shortened display/application IDs, and any shortened-ID collision with a baseline proposal or
+another candidate fails closed. Existing B3d identity validation remains responsible for detecting
+collisions with current canonical state at admission. Exact encoding vectors must be frozen in B4 RED
+before GREEN. Legacy B1 FNV identities remain compatibility labels, never security evidence; B4
+always checks exact structural equality and the full digest where hostile model material is bound.
+
+#### Receipt-bearing refinement artifact
+
+The server-side operation returns:
+
+```ts
+type BootstrapRefinementArtifact = InferenceArtifact<BootstrapRefinementPayload>;
+```
+
+- The exact `InferenceReceipt` returned by Hermes is retained in the frozen artifact and its
+  `operation` must equal `onceaponatime.bootstrap.refine`.
+- `operation` is a caller-owned request invariant copied into the receipt by `HermesProvider`; the
+  current broker response does not echo or attest it. Broker/model/request/fallback fields remain
+  broker execution metadata and must pass the normative Hermes envelope checks.
+- The normalized payload remains proposal-only. A successful transport receipt proves only which
+  route executed, not that any candidate is valid, approved, or canonical.
+- Browser HTTP deserialization may reconstruct runtime freezing using `createInferenceArtifact()`,
+  as the existing Stage 1/Stage 2 boundary does; it may not rebuild or reinterpret receipt fields.
+  Because `createInferenceArtifact()` currently freezes only the wrapper and receipt, B4 must first
+  independently deep-freeze the entire normalized payload and every nested candidate/evidence value.
+- The artifact carries a full SHA-256 `rawOutputDigest` over the UTF-8 encoding of the exact output
+  string returned by the provider (not the original HTTP response bytes, which are unavailable after
+  envelope decoding), and each normalized candidate carries its full `candidateDigest`. A full
+  `artifactDigest` binds the schema, exact baseline/source identities, ordered candidate digests,
+  raw-output digest, and exact receipt fields using the same versioned length-prefix encoding. These
+  are Onceaponatime bindings, not broker attestations. The same receipt plus different output is a
+  different artifact and cannot substitute candidates during review or admission.
+- The review session retains the operation-level artifact even when `entries` is empty so the author
+  can see that refinement ran and inspect truthful execution provenance.
+
+#### Additive merge into the existing manifest
+
+- A pure Onceaponatime-owned merge/normalization boundary consumes the exact baseline manifest and
+  exact validated refinement artifact. It mutates neither input.
+- Before merging, it revalidates baseline structure, receipt operation, baseline manifest ID, bound
+  source fingerprint, exact bound source documents, pending-only state, and candidate citations.
+- The combined manifest is rebuilt under B1 identity rules because its source-entry projection has
+  changed. Current B1 entry IDs embed the containing manifest ID, so every deterministic entry ID is
+  necessarily rebased. The merge retains an immutable one-to-one `baselineEntryId -> combinedEntryId`
+  map, derived by original kind/sourceIndex/order, and validates both sides. No author decision exists
+  yet, so no decision or assignment identity is migrated.
+- Apart from the required manifest/entry-ID rebase and addition of immutable suggestion/provenance
+  metadata, every baseline entry's kind, `sourceIndex`, proposal, evidence, confidence metadata,
+  `supportedForApplication`, pending decision, and absent admitted value remains structurally equal
+  and in the same relative order. B4 may not rewrite or suppress those semantic fields in place.
+- Normalized AI *addition* entries are appended in one deterministic order as ordinary pending,
+  application-supported `BootstrapManifestEntry` values. Normalized *suggested edits* attach to the
+  rebased deterministic target entry as non-decision metadata and do not become duplicate entries.
+- The existing B3 vocabulary remains `approved | edited | rejected`. Choosing a suggested edit is an
+  explicit B3 `edited` decision that records `selectedRefinementCandidateDigest`; it is never an
+  automatic decision. Ordinary manual edit leaves that field absent. Subsequent author changes may
+  preserve the historical selection marker while the receipt truthfully distinguishes the selected
+  source suggestion from the final author-edited admitted proposal.
+- Additions and suggestions each carry immutable refinement provenance containing the exact inference
+  receipt, raw-output digest, candidate digest, baseline manifest ID, and optional
+  `refinesBaselineEntryId`. These fields participate in combined-manifest fingerprinting and
+  validation. B1 decision reconstruction must preserve them, and B3d copies them into the matching
+  `BootstrapReceiptEntry`; it does not reinterpret them as approval or truth.
+- Deterministic/manual/legacy entries do not receive fabricated Hermes provenance. Refinement
+  provenance is present only where a real admitted B4 artifact supplied it.
+- The combined manifest receives its own B1-derived identity/fingerprint and explicit immutable
+  refinement metadata containing the baseline manifest ID, exact old-to-new entry-ID map, artifact
+  digest, and receipt. All of that metadata is inside the validated/fingerprinted projection. The
+  original baseline artifact remains retained in the review session; the combined manifest does not
+  impersonate it or rely on the legacy FNV ID without exact structural comparison.
+- The merge performs no deduplication, semantic ranking, automatic conflict resolution, decision,
+  assignment, preparation, or canonical write.
+
+These are deliberate, narrow schema extensions to `BootstrapManifest`, `BootstrapManifestEntry`,
+B3 decision metadata, and `BootstrapReceiptEntry`. They require coordinated B1 fingerprint/validator,
+B3 transition, and B3d receipt-projection changes. They do **not** change `StoryProject` canonical
+schema or `prepareBootstrap()` admission semantics. The returned immutable `BootstrapReceipt` is the
+post-admission owner through the B3d decision and current UI receipt display. Durable receipt-history
+persistence across application reloads does not exist for B3d today and remains a separately frozen
+backlog concern; B4 must not pretend that ephemeral display is durable storage.
+
+#### UI and lifecycle boundary
+
+- B4 extends the existing structural-review session; it does not add another review screen or
+  alternative APPLY control.
+- During refinement, all controls that could decide, edit, assign, close, regenerate, refine again,
+  or APPLY the submitted session are unavailable. A second refinement request is impossible.
+- Success atomically replaces only the session's pending baseline view with the combined pending
+  manifest and retained refinement artifact. The same `BootstrapReviewWorkspace` renders both
+  deterministic and AI-origin additions plus AI suggested edits beside their deterministic targets,
+  clearly labeling origin and showing receipt provenance without turning it into confidence or
+  authority.
+- Failure leaves the exact baseline manifest and null assignments intact, displays an author-visible
+  refinement operation error, and permits retry. It creates no candidate artifact and no receipt
+  display claiming completion.
+- Refinement failures use the existing `WorkbenchErrorNotice` path with the exact new
+  `WorkbenchOperationSource` value `bootstrap-refine`; they are not mislabeled as B3d `bootstrap`,
+  `execute`, or `promote` failures and remain scoped to the originating project/session attempt.
+- Source edits, project switches, session regeneration, or component unmount invalidate an in-flight
+  attempt. Late success/failure becomes inert and cannot replace another session, display its
+  receipt, or clear its controls. Use committed lifecycle identity/token scoping; never mutate
+  ownership refs during render.
+- Source freshness is checked both immediately before the request and again before merge using exact
+  `sourceDocumentsAreIdentical()` semantics, not fingerprint equality alone.
+
+#### Authority and mutation matrix
+
+| Layer | May own | Must not own |
+|---|---|---|
+| B2 deterministic discovery | baseline evidence-backed proposals | AI invocation, decisions, canon |
+| underlying model | raw refinement suggestion only | receipt, IDs, evidence truth, approval, mutation, provider choice |
+| Hermes broker/provider boundary | route execution + truthful broker/model/fallback receipt fields | proposal validity, evidence truth, approval, canon |
+| B4 validator/normalizer | closed structural admission, source-bound citation replay, deterministic IDs/digests/order | semantic entailment, author decisions, canonical mutation |
+| B1 manifest | combined immutable proposal/review artifact | automatic approval or preparation |
+| B3 review | explicit author approve/edit/reject + assignments | model execution or direct canon writes |
+| B3d `prepareBootstrap()` | atomic application of one complete reviewed manifest | inference, partial admission, implicit decisions |
+
+#### RED acceptance surface to freeze next
+
+The B4 RED gate must test the wished-for public boundaries, not implementation choreography:
+
+1. deterministic B2 executes and remains byte/field-equivalent whether refinement is skipped,
+   succeeds, returns zero entries, or fails;
+2. no Hermes call occurs without the explicit refinement action, after any decision/assignment, or
+   more than once concurrently/successfully for one baseline;
+3. exact operation label, provider-neutral receipt-bearing interface, provider unavailability, and
+   no fallback candidate fabrication;
+4. duplicate-key-detecting raw JSON parsing, exact recursive key sets and v1 resource/control-
+   character limits across hostile browser/model input, all four allowed kinds, excluded topology
+   fields, unknown/unsupported kinds, wrong types, and valid zero-entry output;
+5. exact UTF-16 source-coordinate replay, including astral/surrogate fixtures, repeated identical
+   text at different offsets, whitespace/punctuation-only spans, duplicate versus overlapping spans,
+   unknown documents, and stale source before request/merge;
+6. SHA-256 encoding vectors, candidate/raw-output binding, shortened-ID collision toxics, exact
+   structural checks beside legacy FNV IDs, deterministic normalization/order, deep immutability,
+   and non-mutation of baseline manifest, source documents, raw output, payload, and receipt;
+7. additive-only merge with a validated exact old-to-new entry-ID map: baseline semantic fields stay
+   equivalent/in-order under required B1 ID rebasing; AI additions append pending; AI alternatives
+   become suggestion metadata rather than duplicate proposed IDs; neither can rewrite/suppress B2;
+8. provenance and suggestions affect combined-manifest identity, retain exact artifact/candidate
+   digests, survive approve/edit/reject reconstruction, distinguish selected suggestion from final
+   author-edited content, never create a decision, and reach matching B3d receipt entries;
+9. the same B3 workspace drives decisions/assignments and the same B3d callback/`prepareBootstrap()`
+   performs the only canonical mutation; a TypeScript-AST/module-graph gate resolves direct imports,
+   re-export aliases, and dynamic imports to prove no second review/APPLY/admission route is reachable;
+10. pending UI freezes all review authority controls; failure preserves the exact baseline; success
+    swaps one combined session; project/source/session changes and unmount make late completion inert;
+    ambiguous timeout retries reuse one idempotency reservation, explicit terminal failures advance
+    retry ordinal, same-key/different-request substitution fails, and only one result can be merged;
+11. no direct browser-to-Hermes call, model/provider field, tool/skill/memory/session capability,
+    topology-bearing model reference, direct StoryProject mutation, or `prepareBootstrap()` call from
+    the B4 producer/validator/UI.
+
+The first RED should stop at the first genuinely absent public B4 boundary while fixture self-checks
+and adjacent B2/B3/B3d/Hermes-provider tests remain green. Contract freeze, RED, and GREEN remain
+separate checkpoints; no B4 production implementation is authorized by this draft.
+
+#### Non-goals
+
+- No changes to B2 detection/parsing heuristics and no model-assisted replacement of B2 output.
+- No second review workspace, second decision vocabulary, second APPLY button, or second canonical
+  admission function.
+- No automatic acceptance, confidence-to-decision conversion, deduplication, ranking, entity merge,
+  or preference for AI over deterministic proposals.
+- No facts, generic relationships, threads, mysteries, continuity audit, pacing state, schema
+  expansion of canonical `StoryProject`, post-bootstrap enrichment, or refinement of
+  already-canonical projects. The explicitly listed proposal-manifest/review/receipt provenance
+  extensions above are authorized B4 artifact-schema work, not canonical world-schema expansion.
+- No tools, skills, memory, agent loop, model picker, direct provider SDK, live model evaluation, or
+  capability-policy redesign in this slice.
+- No durable review-session or receipt-history persistence/resume across application restart, no
+  cancellation transport, and no multi-pass AI refinement.
+- No B3d canonical admission or identity-resolution semantic changes. B4 only extends the existing
+  receipt projection with immutable provenance after the same admission rules succeed.
 
 ## Post-B4 backlog — explicitly not part of B3c/B3d
 
