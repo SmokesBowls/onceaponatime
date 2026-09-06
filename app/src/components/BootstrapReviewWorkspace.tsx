@@ -1,5 +1,5 @@
-import React, { useState } from 'react';
-import { CheckCircle2, Edit3, XCircle } from 'lucide-react';
+import React, { useEffect, useState } from 'react';
+import { AlertTriangle, CheckCircle2, Edit3, RefreshCw, XCircle } from 'lucide-react';
 import type {
   BootstrapAssignments,
   BootstrapDecision,
@@ -12,9 +12,19 @@ import { StructuralReviewPanel } from './StructuralReviewPanel';
 export interface BootstrapReviewWorkspaceProps {
   readonly manifest: BootstrapManifest;
   readonly assignments: BootstrapAssignments;
+  /**
+   * True when `manifest` was built from source documents that no longer
+   * match the project's current ones. The artifact stays visible (closing
+   * it would destroy author work already done) but every authority control
+   * is disabled -- neither silently discarding nor silently regenerating
+   * the session is acceptable; only an explicit `onRegenerate` may replace
+   * it.
+   */
+  readonly isStale: boolean;
   readonly onDecide: (entryId: string, decision: BootstrapDecision, admitted?: BootstrapProposal) => void;
   readonly onAssignPovActor: (actorId: string | null) => void;
   readonly onAssignCurrentLocation: (locationId: string | null) => void;
+  readonly onRegenerate: () => void;
   readonly onClose: () => void;
 }
 
@@ -38,13 +48,22 @@ const DECISION_LABEL: Record<BootstrapDecision, string> = {
 export const BootstrapReviewWorkspace: React.FC<BootstrapReviewWorkspaceProps> = ({
   manifest,
   assignments,
+  isStale,
   onDecide,
   onAssignPovActor,
   onAssignCurrentLocation,
+  onRegenerate,
   onClose,
 }) => {
   const [editingEntryId, setEditingEntryId] = useState<string | null>(null);
   const [editLabel, setEditLabel] = useState('');
+
+  // A stray in-progress edit form must not survive into the stale state --
+  // its SAVE EDIT would otherwise be the one authority action not covered
+  // by the disabled-controls sweep below.
+  useEffect(() => {
+    if (isStale) setEditingEntryId(null);
+  }, [isStale]);
 
   const readiness = assessBootstrapReviewReadiness(manifest, assignments);
   const actorCandidates = admittedEntityCandidates(manifest, 'actor_proposal');
@@ -114,16 +133,18 @@ export const BootstrapReviewWorkspace: React.FC<BootstrapReviewWorkspaceProps> =
                   <>
                     <button
                       type="button"
+                      disabled={isStale}
                       onClick={() => onDecide(entry.id, 'approved')}
-                      className="flex items-center gap-1 rounded bg-[#1A1A1A] px-2.5 py-1 text-[10px] font-bold uppercase tracking-wider text-[#FDFCF8] hover:bg-[#333333]"
+                      className="flex items-center gap-1 rounded bg-[#1A1A1A] px-2.5 py-1 text-[10px] font-bold uppercase tracking-wider text-[#FDFCF8] hover:bg-[#333333] disabled:cursor-not-allowed disabled:opacity-40"
                     >
                       <CheckCircle2 className="h-3 w-3" />
                       APPROVE
                     </button>
                     <button
                       type="button"
+                      disabled={isStale}
                       onClick={() => beginEdit(entry)}
-                      className="flex items-center gap-1 rounded border border-[#1A1A1A]/30 bg-[#FDFCF8] px-2.5 py-1 text-[10px] font-bold uppercase tracking-wider text-[#1A1A1A] hover:bg-white"
+                      className="flex items-center gap-1 rounded border border-[#1A1A1A]/30 bg-[#FDFCF8] px-2.5 py-1 text-[10px] font-bold uppercase tracking-wider text-[#1A1A1A] hover:bg-white disabled:cursor-not-allowed disabled:opacity-40"
                     >
                       <Edit3 className="h-3 w-3" />
                       EDIT
@@ -132,8 +153,9 @@ export const BootstrapReviewWorkspace: React.FC<BootstrapReviewWorkspaceProps> =
                 )}
                 <button
                   type="button"
+                  disabled={isStale}
                   onClick={() => onDecide(entry.id, 'rejected')}
-                  className="flex items-center gap-1 rounded border border-[#8B263E]/40 bg-[#FDFCF8] px-2.5 py-1 text-[10px] font-bold uppercase tracking-wider text-[#8B263E] hover:bg-[#8B263E]/10"
+                  className="flex items-center gap-1 rounded border border-[#8B263E]/40 bg-[#FDFCF8] px-2.5 py-1 text-[10px] font-bold uppercase tracking-wider text-[#8B263E] hover:bg-[#8B263E]/10 disabled:cursor-not-allowed disabled:opacity-40"
                 >
                   <XCircle className="h-3 w-3" />
                   REJECT
@@ -175,9 +197,10 @@ export const BootstrapReviewWorkspace: React.FC<BootstrapReviewWorkspaceProps> =
           <span>POV Actor</span>
           <select
             data-role="pov-select"
+            disabled={isStale}
             value={assignments.activePovActorId ?? ''}
             onChange={(event) => onAssignPovActor(event.target.value || null)}
-            className="w-full rounded border border-[#1A1A1A]/30 bg-white px-2 py-1.5 text-xs font-serif italic text-[#1A1A1A]"
+            className="w-full rounded border border-[#1A1A1A]/30 bg-white px-2 py-1.5 text-xs font-serif italic text-[#1A1A1A] disabled:cursor-not-allowed disabled:opacity-40"
           >
             <option value="">-- not selected --</option>
             {actorCandidates.map((candidate) => (
@@ -190,9 +213,10 @@ export const BootstrapReviewWorkspace: React.FC<BootstrapReviewWorkspaceProps> =
           <span>Current Location</span>
           <select
             data-role="current-location-select"
+            disabled={isStale}
             value={assignments.currentLocationId ?? ''}
             onChange={(event) => onAssignCurrentLocation(event.target.value || null)}
-            className="w-full rounded border border-[#1A1A1A]/30 bg-white px-2 py-1.5 text-xs font-serif italic text-[#1A1A1A]"
+            className="w-full rounded border border-[#1A1A1A]/30 bg-white px-2 py-1.5 text-xs font-serif italic text-[#1A1A1A] disabled:cursor-not-allowed disabled:opacity-40"
           >
             <option value="">-- not selected --</option>
             {locationCandidates.map((candidate) => (
@@ -202,7 +226,25 @@ export const BootstrapReviewWorkspace: React.FC<BootstrapReviewWorkspaceProps> =
         </label>
       </div>
 
-      {readiness.complete && (
+      {isStale ? (
+        <div
+          data-role="review-stale"
+          className="space-y-2 rounded border border-[#966F33]/50 bg-[#966F33]/10 p-3 text-center"
+        >
+          <div className="flex items-center justify-center gap-2 text-[11px] font-bold uppercase tracking-wider text-[#7A5A29]">
+            <AlertTriangle className="h-4 w-4" />
+            <span>Source changed — regenerate structural review before continuing.</span>
+          </div>
+          <button
+            type="button"
+            onClick={onRegenerate}
+            className="mx-auto flex items-center gap-1.5 rounded bg-[#1A1A1A] px-3 py-1.5 text-[10px] font-bold uppercase tracking-wider text-[#FDFCF8] hover:bg-[#333333]"
+          >
+            <RefreshCw className="h-3 w-3" />
+            REGENERATE REVIEW
+          </button>
+        </div>
+      ) : readiness.complete && (
         <div
           data-role="review-complete"
           className="rounded border border-[#2D5A27]/40 bg-[#2D5A27]/10 p-3 text-center text-[11px] font-bold uppercase tracking-wider text-[#2D5A27]"

@@ -190,33 +190,42 @@ export const StoryEditor: React.FC<StoryEditorProps> = ({
     }
   };
 
+  // sourceDocumentsAreIdentical() is bootstrapManifest.ts's own documented
+  // primary freshness proof; a fingerprint is a lossy 32-bit hash never
+  // meant to be relied on alone (see its own doc comment). Derived fresh on
+  // every render from the current `project` prop -- not tracked in its own
+  // state -- so a source change is detected immediately, including while the
+  // workspace stays open (no CLOSE/REOPEN in between), not only the next
+  // time BEGIN happens to be clicked.
+  const isReviewSessionStale = reviewSession !== null
+    && !sourceDocumentsAreIdentical(reviewSession.manifest.boundSourceDocuments, project.sourceDocuments ?? []);
+
+  const regenerateReviewSession = () => {
+    setReviewSession({
+      manifest: buildBootstrapManifest(project, discoverBootstrap(project)),
+      assignments: { activePovActorId: null, currentLocationId: null },
+    });
+  };
+
   const handleBeginStructuralReview = () => {
-    // sourceDocumentsAreIdentical() is bootstrapManifest.ts's own documented
-    // primary freshness proof; a fingerprint is a lossy 32-bit hash never
-    // meant to be relied on alone (see its own doc comment).
-    const currentSourceDocuments = project.sourceDocuments ?? [];
-    const isStale = !reviewSession
-      || !sourceDocumentsAreIdentical(reviewSession.manifest.boundSourceDocuments, currentSourceDocuments);
-    if (isStale) {
-      setReviewSession({
-        manifest: buildBootstrapManifest(project, discoverBootstrap(project)),
-        assignments: { activePovActorId: null, currentLocationId: null },
-      });
-    }
+    if (!reviewSession || isReviewSessionStale) regenerateReviewSession();
     setIsReviewOpen(true);
   };
 
   const handleDecideReviewEntry = (entryId: string, decision: BootstrapDecision, admitted?: BootstrapProposal) => {
+    if (isReviewSessionStale) return; // defense in depth: never mutate a session the UI has already disabled
     setReviewSession((prev) => (
       prev ? decideBootstrapReviewEntry(prev.manifest, prev.assignments, entryId, decision, admitted) : prev
     ));
   };
 
   const handleAssignReviewPovActor = (actorId: string | null) => {
+    if (isReviewSessionStale) return;
     setReviewSession((prev) => (prev ? { ...prev, assignments: { ...prev.assignments, activePovActorId: actorId } } : prev));
   };
 
   const handleAssignReviewCurrentLocation = (locationId: string | null) => {
+    if (isReviewSessionStale) return;
     setReviewSession((prev) => (
       prev ? { ...prev, assignments: { ...prev.assignments, currentLocationId: locationId } } : prev
     ));
@@ -792,9 +801,11 @@ export const StoryEditor: React.FC<StoryEditorProps> = ({
               <BootstrapReviewWorkspace
                 manifest={reviewSession.manifest}
                 assignments={reviewSession.assignments}
+                isStale={isReviewSessionStale}
                 onDecide={handleDecideReviewEntry}
                 onAssignPovActor={handleAssignReviewPovActor}
                 onAssignCurrentLocation={handleAssignReviewCurrentLocation}
+                onRegenerate={regenerateReviewSession}
                 onClose={() => setIsReviewOpen(false)}
               />
             ) : (
