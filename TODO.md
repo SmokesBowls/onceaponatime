@@ -528,6 +528,29 @@ compete with, or block B3c/B3d, and they are not part of the B4 implementation s
   (server response shape, validation input, browser-side re-freezing).
 - Explicit proof that Stage 2 rendering does not mutate its input `GenerationContext`.
 
+## Ideas from external research (not scheduled)
+
+Surfaced reading Novella AI Novel Forge's actual generator source (`novela-code.html`) --
+not marketing material. Its architecture is LLM-authored-and-trusted at every layer (its
+"Bible" is free-text markdown an LLM writes and nothing verifies against source evidence;
+its "Story State" is an LLM-regenerated text block after every chapter) -- structurally
+less rigorous than this project's deterministic-evidence + explicit-author-authority chain
+(B1-B3d), not a model to imitate wholesale. Two mechanisms it has that this project doesn't
+are worth keeping in mind for later, unscheduled:
+
+- **Periodic advisory continuity audit.** Novella re-checks recent chapters against its
+  Bible/state every ~8 chapters and folds a findings report (contradictions, knowledge
+  leaks, dangling setups, timeline slips) back into subsequent generation. This project
+  only validates at generation time (`validateCandidateProse`) and tracks per-entity
+  reliability progressively (`codexEngine.ts`); nothing does a holistic look-back over
+  already-canonical chapters. If ever pursued, it must follow B4's existing rule: a
+  proposal/report source an author reviews, never an auto-applied fix.
+- **Structured pacing state.** Novella tracks act/arc/an "escalation ladder"/open threads/
+  what's "due for payoff soon" as first-class state. This project has no equivalent --
+  `StoryProject.threads[]` tracks open/closed but nothing about pacing, escalation, or
+  payoff timing. A real gap, but a schema-level addition affecting generation context
+  compilation, well outside B3c/B3d's scope.
+
 ## Not yet decided
 
 - Whether Manuscript Intake should eventually support file upload (`sourceType:
