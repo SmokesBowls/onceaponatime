@@ -682,6 +682,34 @@ Before production changes, commit focused failing tests proving:
     afterward starts a genuinely fresh session (a new `discoverBootstrap()` pass against the
     now-different canonical state), never re-offering the same manifest for a second APPLY.
 
+#### B3d prop boundary (design decision, settled before RED)
+
+B3c's `BootstrapReviewSession` (manifest + assignments) deliberately lives in `StoryEditor`, not
+`App.tsx` -- unlike `candidate` (Promotion Manifest's review-and-decide state), which already
+lives in `App.tsx` and reaches `StoryEditor` only as a prop. B3d does not retroactively lift B3c's
+session to match that older pattern; the actual `prepareBootstrap()` call, and the canonical
+`updateActiveProject()` write, still belong exclusively to `App.tsx` (the only place the
+`projects` array lives), so the boundary must pass the reviewed artifact *down* to that call
+instead of pulling session state *up*:
+
+```ts
+onApplyBootstrap: (
+  manifest: BootstrapManifest,
+  assignments: BootstrapAssignments,
+  transactionTimestamp: number,
+) => Promise<BootstrapReceipt>
+```
+
+`StoryEditor` generates `transactionTimestamp` (`Date.now()`) at the moment APPLY is clicked --
+the one deliberate non-determinism this whole chain has, isolated to that single call site. Its
+handler guards re-entrancy (`isApplyingBootstrap`), and on the resolved promise clears
+`reviewSession`/`isReviewOpen` and stores the receipt for display; on rejection it does nothing
+UI-wise itself and leaves the session untouched -- `App.tsx`'s implementation is the one that
+calls `setWorkbenchError(workbenchOperationError('bootstrap', err))` before rethrowing, so the
+failure reaches the screen through the exact same `workbenchError` prop and `WorkbenchErrorNotice`
+render branch execute/promote already use, just gated on `source === 'bootstrap'` instead. No new
+error-carrying prop, no new display component.
+
 #### B3d hard non-goals
 
 - No new validation logic duplicating any check `prepareBootstrap()` already performs.
