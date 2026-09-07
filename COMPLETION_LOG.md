@@ -591,6 +591,16 @@ counting replacing first-match resolution, so a duplicated `candidateDigest` fai
 - Verified: full `npm test`, `tsc --noEmit`, production build, and `git diff --check` all pass,
   both before and after the adversarial-review fixes.
 
-**Committed at `463e9d0`; not yet pushed to `origin/main`.**
+**Committed at `463e9d0`; pushed to `origin/main` (`6894214`).**
+
+Also runtime-proven live in the app the same day: a real B2 discovery pass (`Keen` as `actor_proposal`,
+`Ironspire` as `location_proposal`, each with exact evidence and B2 rationale intact) followed by a real
+`REFINE WITH HERMES` call through the now-connected local Hermes gateway (Codex OAuth -> `gpt-5.6-sol`),
+producing a genuine B4b-merged manifest with three AI-added entries (`locked chest`, `eastern gate`,
+`ancient walls`), each correctly marked `AI-added`/`AI proposal`/`AI supporting evidence`/`AI refinement
+provenance` with exact evidence offsets, still `Pending author review`, with the original B2 entries
+unchanged. Confirms B4c1/B4b/B4c2 end to end outside the test suite. This run happened to return only
+additions, not a `suggestedRefinements[]` entry, so B4c3's `USE THIS SUGGESTION` path is shipped and
+test-proven but not yet visually exercised live -- see TODO.md for the plan to try a fresh session.
 
 **Not yet done:** B4d (End-to-End Authority Proof). See `TODO.md`.
