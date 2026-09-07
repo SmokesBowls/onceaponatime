@@ -113,6 +113,7 @@ function storyEditorProps(
       calls.applyBootstrap.push({ manifest, assignments, transactionTimestamp });
       return FAKE_RECEIPT;
     })) as unknown as ApplyBootstrapMock,
+    onRefineBootstrap: async () => { throw new Error('B3d fixture must never refine bootstrap'); },
   } as unknown as React.ComponentProps<typeof StoryEditor>;
 }
 

@@ -40,6 +40,7 @@ import {
 } from './lib/compositionReadiness';
 import type { BootstrapAssignments, BootstrapManifest } from './lib/bootstrapManifest';
 import { prepareBootstrap, type BootstrapReceipt } from './lib/prepareBootstrap';
+import { mergeBootstrapRefinementArtifact } from './lib/bootstrapRefinementMerge';
 
 export default function App() {
   const [projects, setProjects] = useState<StoryProject[]>(DEFAULT_PROJECTS);
@@ -227,6 +228,33 @@ export default function App() {
       return prepared.bootstrapReceipt;
     } catch (err) {
       setWorkbenchError(workbenchOperationError('bootstrap', err));
+      throw err;
+    }
+  };
+
+  // B4c1: the server runs only B4a (Hermes refinement); the merge (B4b) is
+  // pure/browser-safe and happens here, inside this same try/catch, so a
+  // client-side merge failure is caught by the identical path as a transport
+  // or server-side failure -- one truthful error, never a second, forgettable
+  // failure mode after an apparently successful fetch. Never mutates
+  // canonical StoryProject state; only computes and returns the combined
+  // manifest for StoryEditor to swap into its own review session.
+  const handleRefineBootstrap = async (baseline: BootstrapManifest): Promise<BootstrapManifest> => {
+    setWorkbenchError(null);
+    try {
+      const response = await fetch('/api/bootstrap/refine', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ baseline }),
+      });
+      const data = await response.json();
+      if (!data.success) {
+        throw new Error(data.error || 'Bootstrap refinement failed.');
+      }
+      const artifact = createInferenceArtifact(data.artifact.value, data.artifact.receipt);
+      return mergeBootstrapRefinementArtifact(baseline, artifact);
+    } catch (err) {
+      setWorkbenchError(workbenchOperationError('bootstrap-refine', err));
       throw err;
     }
   };
@@ -607,6 +635,7 @@ export default function App() {
               isGenerating={isGenerating}
               workbenchError={workbenchError}
               onApplyBootstrap={handleApplyBootstrap}
+              onRefineBootstrap={handleRefineBootstrap}
             />
           )}
 

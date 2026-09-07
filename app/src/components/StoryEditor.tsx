@@ -37,6 +37,7 @@ import {
 import { discoverBootstrap } from '../lib/bootstrapDiscovery';
 import {
   buildBootstrapManifest,
+  isBootstrapRefinementEligible,
   sourceDocumentsAreIdentical,
   type BootstrapAssignments,
   type BootstrapDecision,
@@ -98,6 +99,7 @@ interface StoryEditorProps {
     assignments: BootstrapAssignments,
     transactionTimestamp: number,
   ) => Promise<BootstrapReceipt>;
+  onRefineBootstrap: (baseline: BootstrapManifest) => Promise<BootstrapManifest>;
 }
 
 export const StoryEditor: React.FC<StoryEditorProps> = ({
@@ -114,6 +116,7 @@ export const StoryEditor: React.FC<StoryEditorProps> = ({
   isGenerating,
   workbenchError,
   onApplyBootstrap,
+  onRefineBootstrap,
 }) => {
   const [operation, setOperation] = useState<OperatingMode>('CONTINUATION');
   const [distance, setDistance] = useState<NarrativeDistance>('BEAT');
@@ -131,9 +134,12 @@ export const StoryEditor: React.FC<StoryEditorProps> = ({
   } | null>(null);
   const [isReviewOpen, setIsReviewOpen] = useState(false);
   const [isApplyingBootstrap, setIsApplyingBootstrap] = useState(false);
+  const [isRefining, setIsRefining] = useState(false);
   const [bootstrapReceipt, setBootstrapReceipt] = useState<BootstrapReceipt | null>(null);
   const isApplyingBootstrapRef = useRef(false);
   const applyAttemptRef = useRef(0);
+  const isRefiningRef = useRef(false);
+  const refineAttemptRef = useRef(0);
   const projectIdRef = useRef(project.id);
 
   const readiness = assessCompositionReadiness(project);
@@ -143,15 +149,20 @@ export const StoryEditor: React.FC<StoryEditorProps> = ({
 
   useLayoutEffect(() => {
     applyAttemptRef.current += 1;
+    refineAttemptRef.current += 1;
     projectIdRef.current = project.id;
     isApplyingBootstrapRef.current = false;
+    isRefiningRef.current = false;
     setIsApplyingBootstrap(false);
+    setIsRefining(false);
     setReviewSession(null);
     setIsReviewOpen(false);
     setBootstrapReceipt(null);
     return () => {
       applyAttemptRef.current += 1;
+      refineAttemptRef.current += 1;
       isApplyingBootstrapRef.current = false;
+      isRefiningRef.current = false;
     };
   }, [project.id]);
 
@@ -222,6 +233,7 @@ export const StoryEditor: React.FC<StoryEditorProps> = ({
     && !sourceDocumentsAreIdentical(reviewSession.manifest.boundSourceDocuments, project.sourceDocuments ?? []);
 
   const regenerateReviewSession = () => {
+    if (isRefiningRef.current) return; // defense in depth: never replace a session mid-refine
     setReviewSession({
       manifest: buildBootstrapManifest(project, discoverBootstrap(project)),
       assignments: { activePovActorId: null, currentLocationId: null },
@@ -234,22 +246,61 @@ export const StoryEditor: React.FC<StoryEditorProps> = ({
   };
 
   const handleDecideReviewEntry = (entryId: string, decision: BootstrapDecision, admitted?: BootstrapProposal) => {
-    if (isReviewSessionStale) return; // defense in depth: never mutate a session the UI has already disabled
+    if (isReviewSessionStale || isRefining) return; // defense in depth: never mutate a session the UI has already disabled
     setReviewSession((prev) => (
       prev ? decideBootstrapReviewEntry(prev.manifest, prev.assignments, entryId, decision, admitted) : prev
     ));
   };
 
   const handleAssignReviewPovActor = (actorId: string | null) => {
-    if (isReviewSessionStale) return;
+    if (isReviewSessionStale || isRefining) return;
     setReviewSession((prev) => (prev ? { ...prev, assignments: { ...prev.assignments, activePovActorId: actorId } } : prev));
   };
 
   const handleAssignReviewCurrentLocation = (locationId: string | null) => {
-    if (isReviewSessionStale) return;
+    if (isReviewSessionStale || isRefining) return;
     setReviewSession((prev) => (
       prev ? { ...prev, assignments: { ...prev.assignments, currentLocationId: locationId } } : prev
     ));
+  };
+
+  // B4c1: eligible only on a completely untouched session -- every entry
+  // still pending, neither assignment made, no existing refinementMetadata
+  // (isBootstrapRefinementEligible() covers all three; assignments live
+  // outside BootstrapManifest entirely, so only StoryEditor can check them),
+  // not stale, and no refinement already in flight. Re-derived fresh every
+  // render, never cached in its own state, exactly like isReviewSessionStale.
+  const isRefinementEligible = reviewSession !== null
+    && !isReviewSessionStale
+    && !isRefining
+    && isBootstrapRefinementEligible(reviewSession.manifest)
+    && reviewSession.assignments.activePovActorId === null
+    && reviewSession.assignments.currentLocationId === null;
+
+  const handleRefineBootstrap = async () => {
+    if (!isRefinementEligible || reviewSession === null || isRefiningRef.current) return;
+
+    isRefiningRef.current = true;
+    setIsRefining(true);
+    const refineAttempt = ++refineAttemptRef.current;
+    const refiningProjectId = project.id;
+    const baseline = reviewSession.manifest;
+    try {
+      const combined = await onRefineBootstrap(baseline);
+      if (refineAttemptRef.current === refineAttempt && projectIdRef.current === refiningProjectId) {
+        setReviewSession((prev) => (
+          prev && prev.manifest === baseline ? { ...prev, manifest: combined } : prev
+        ));
+      }
+    } catch {
+      // App owns the existing WorkbenchOperationError surface. Preserve the
+      // exact review session so the author can retry.
+    } finally {
+      if (refineAttemptRef.current === refineAttempt && projectIdRef.current === refiningProjectId) {
+        isRefiningRef.current = false;
+        setIsRefining(false);
+      }
+    }
   };
 
   const handleApplyBootstrap = async () => {
@@ -849,6 +900,10 @@ export const StoryEditor: React.FC<StoryEditorProps> = ({
               <WorkbenchErrorNotice message={workbenchError.message} />
             )}
 
+            {workbenchError && workbenchError.source === 'bootstrap-refine' && (
+              <WorkbenchErrorNotice message={workbenchError.message} />
+            )}
+
             {readiness.ready ? (
               <button
                 onClick={handleRunFramework}
@@ -880,19 +935,37 @@ export const StoryEditor: React.FC<StoryEditorProps> = ({
                   manifest={reviewSession.manifest}
                   assignments={reviewSession.assignments}
                   isStale={isReviewSessionStale}
+                  isRefining={isRefining}
                   onDecide={handleDecideReviewEntry}
                   onAssignPovActor={handleAssignReviewPovActor}
                   onAssignCurrentLocation={handleAssignReviewCurrentLocation}
                   onRegenerate={regenerateReviewSession}
                   onClose={() => setIsReviewOpen(false)}
                 />
+                {isRefinementEligible && (
+                  <button
+                    type="button"
+                    onClick={handleRefineBootstrap}
+                    className="w-full rounded border border-[#1A1A1A]/30 bg-[#FDFCF8] px-4 py-3 text-xs font-sans font-bold uppercase tracking-[0.15em] text-[#1A1A1A] hover:bg-white"
+                  >
+                    REFINE WITH HERMES
+                  </button>
+                )}
+                {isRefining && (
+                  <div
+                    role="status"
+                    className="w-full rounded border border-[#1A1A1A]/20 bg-[#E5E2D9]/60 px-4 py-3 text-center text-xs font-sans font-bold uppercase tracking-[0.15em] text-[#5A554E]"
+                  >
+                    Refining with Hermes…
+                  </div>
+                )}
                 {!isReviewSessionStale
                   && isBootstrapReviewComplete(reviewSession.manifest, reviewSession.assignments)
                   && (
                     <button
                       type="button"
                       onClick={handleApplyBootstrap}
-                      disabled={isApplyingBootstrap}
+                      disabled={isApplyingBootstrap || isRefining}
                       className="w-full rounded bg-[#2D5A27] px-4 py-3 text-xs font-sans font-bold uppercase tracking-[0.15em] text-[#FDFCF8] hover:bg-[#244A20] disabled:cursor-not-allowed disabled:opacity-50"
                     >
                       APPLY

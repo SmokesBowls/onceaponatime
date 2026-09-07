@@ -12,7 +12,7 @@ export function describeOperationFailure(err: unknown): string {
   return 'An unknown error occurred.';
 }
 
-export type WorkbenchOperationSource = 'execute' | 'promote' | 'bootstrap';
+export type WorkbenchOperationSource = 'execute' | 'promote' | 'bootstrap' | 'bootstrap-refine';
 
 export interface WorkbenchOperationError {
   readonly source: WorkbenchOperationSource;

@@ -88,6 +88,7 @@ function storyEditorProps(project: StoryProject, calls = callbackCalls()): React
     isGenerating: false,
     workbenchError: null,
     onApplyBootstrap: async () => { throw new Error('B3b fixture must never apply bootstrap'); },
+    onRefineBootstrap: async () => { throw new Error('B3b fixture must never refine bootstrap'); },
   };
 }
 

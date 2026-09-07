@@ -33,9 +33,9 @@ import type { StoryProject } from '../src/types';
  * directly.
  */
 
-function sourceOnlyProject(overrides?: { text?: string; sourceDocumentId?: string }): StoryProject {
+function sourceOnlyProject(overrides?: { text?: string; sourceDocumentId?: string; projectId?: string }): StoryProject {
   return createManuscriptIntakeProject({
-    projectId: 'proj_b4c1_refine',
+    projectId: overrides?.projectId ?? 'proj_b4c1_refine',
     projectTitle: 'B4c1 Refine Fixture',
     sourceLabel: 'Chapter One',
     pastedText: overrides?.text ?? 'Keen entered Ironspire.\n\nA locked chest sat in the corner.',
@@ -398,7 +398,11 @@ async function testFailedRefineRetainsSessionAndSurfacesWorkbenchError() {
 
 async function testLateRefineCompletionInertOnProjectSwitch() {
   const projectA = sourceOnlyProject();
-  const projectB = sourceOnlyProject({ text: 'Isla approached Falcon Ridge.\n\nA locked chest sat in the corner.', sourceDocumentId: 'source_b4c1_refine_b' });
+  const projectB = sourceOnlyProject({
+    text: 'Isla approached Falcon Ridge.\n\nA locked chest sat in the corner.',
+    sourceDocumentId: 'source_b4c1_refine_b',
+    projectId: 'proj_b4c1_refine_b',
+  });
   const callsA = callbackCalls();
   const callsB = callbackCalls();
   let releaseA: ((manifest: BootstrapManifest) => void) | null = null;

@@ -217,6 +217,23 @@ export interface BootstrapManifestRefinementMetadata {
   readonly receipt: InferenceReceipt;
 }
 
+/**
+ * A manifest is eligible for one optional AI-assisted refinement pass only
+ * while every entry is untouched by author review -- once any decision or
+ * assignment exists, that becomes unavailable for the session. A manifest
+ * that already carries refinementMetadata (i.e. is itself the result of a
+ * prior merge) is never eligible either, regardless of decision state: at
+ * most one successful refinement artifact may ever be merged into one
+ * baseline manifest (no iterative AI-on-AI refinement). Deliberately kept
+ * here, a pure predicate over BootstrapManifest's own fields, rather than
+ * beside the request/response machinery that calls it, so a caller can
+ * depend on this check alone without also depending on that machinery.
+ */
+export function isBootstrapRefinementEligible(manifest: BootstrapManifest): boolean {
+  return manifest.refinementMetadata === undefined
+    && manifest.entries.every((entry) => entry.decision === 'pending' && entry.admitted === undefined);
+}
+
 // ---------------------------------------------------------------------------
 // Manifest entry / manifest
 // ---------------------------------------------------------------------------

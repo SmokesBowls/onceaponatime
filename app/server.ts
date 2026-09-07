@@ -14,12 +14,25 @@ import {
   extractMentionsAndState,
 } from './server/narrativePipeline';
 import { getModelProvider } from './server/modelProvider';
+import { handleBootstrapRefineRequest } from './server/bootstrapRefineRoute';
 import { StoryProject } from './src/types';
 
 dotenv.config();
 
 const app = express();
 const PORT = 3000;
+
+// B4c1: registered ahead of the app-wide express.json() below so the global
+// (duplicate-key-blind) JSON body parser never runs for this one path --
+// Express matches middleware/routes in registration order, and a route
+// registered earlier "wins" for its own path before any later app.use()
+// middleware is reached. The bootstrap-refinement operation boundary holds
+// to a stronger fail-closed standard than this app's older routes; see
+// TODO.md's B4c1 contract for why that is deliberate, not inconsistency.
+app.post('/api/bootstrap/refine', express.raw({ type: 'application/json', limit: '15mb' }), async (req, res) => {
+  const { status, body } = await handleBootstrapRefineRequest(req.body as Buffer);
+  res.status(status).json(body);
+});
 
 app.use(express.json({ limit: '15mb' }));
 

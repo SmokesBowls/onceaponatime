@@ -96,20 +96,17 @@ export type BootstrapRefinementArtifact = InferenceArtifact<BootstrapRefinementP
 // ---------------------------------------------------------------------------
 
 /**
- * B4a source authority: BootstrapManifest.boundSourceDocuments is the sole
- * source-document input to refinement (see TODO.md). A baseline is eligible
- * only while every entry is untouched by author review -- once any decision
- * or assignment exists, refinement is unavailable for that session. A
- * baseline that already carries B4b's refinementMetadata (i.e. is itself
- * the result of a prior merge) is never eligible either, regardless of
- * decision state: the master B4 contract rules out AI-on-AI iterative
- * refinement, so at most one successful artifact may ever be merged into
- * one baseline manifest.
+ * Defined in bootstrapManifest.ts (a pure predicate over BootstrapManifest's
+ * own fields, which already owns the refinementMetadata concept since B4b)
+ * and re-exported here so every existing B4a import path
+ * (`from '../src/lib/bootstrapRefinement'`, used by this module's own
+ * refineBootstrapManifest() and by B4a's frozen test suite) keeps working
+ * unchanged. Living in bootstrapManifest.ts also lets B4c's StoryEditor.tsx
+ * import the eligibility check directly without importing this module --
+ * StoryEditor.tsx must never be reachable-import-graph-adjacent to Hermes
+ * request/response handling, per B4a's own frozen reachability ban.
  */
-export function isBootstrapRefinementEligible(manifest: BootstrapManifest): boolean {
-  return manifest.refinementMetadata === undefined
-    && manifest.entries.every((entry) => entry.decision === 'pending' && entry.admitted === undefined);
-}
+export { isBootstrapRefinementEligible } from './bootstrapManifest';
 
 // ---------------------------------------------------------------------------
 // Duplicate-key-detecting JSON parser

@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useLayoutEffect, useState } from 'react';
 import { AlertTriangle, CheckCircle2, Edit3, RefreshCw, XCircle } from 'lucide-react';
 import type {
   BootstrapAssignments,
@@ -21,6 +21,16 @@ export interface BootstrapReviewWorkspaceProps {
    * it.
    */
   readonly isStale: boolean;
+  /**
+   * True while a B4c1 REFINE request is in flight. Freezes every authority
+   * control exactly like `isStale` does (APPROVE/EDIT/REJECT, the two
+   * assignment selects) plus CLOSE, which `isStale` does not touch --
+   * closing the workspace while its own manifest is about to be replaced
+   * out from under it is not safe either. Never true at the same time as
+   * `isStale` under correct caller gating (REFINE is never offered on a
+   * stale session), but each is checked independently regardless.
+   */
+  readonly isRefining: boolean;
   readonly onDecide: (entryId: string, decision: BootstrapDecision, admitted?: BootstrapProposal) => void;
   readonly onAssignPovActor: (actorId: string | null) => void;
   readonly onAssignCurrentLocation: (locationId: string | null) => void;
@@ -49,6 +59,7 @@ export const BootstrapReviewWorkspace: React.FC<BootstrapReviewWorkspaceProps> =
   manifest,
   assignments,
   isStale,
+  isRefining,
   onDecide,
   onAssignPovActor,
   onAssignCurrentLocation,
@@ -57,13 +68,19 @@ export const BootstrapReviewWorkspace: React.FC<BootstrapReviewWorkspaceProps> =
 }) => {
   const [editingEntryId, setEditingEntryId] = useState<string | null>(null);
   const [editLabel, setEditLabel] = useState('');
+  const controlsDisabled = isStale || isRefining;
 
-  // A stray in-progress edit form must not survive into the stale state --
-  // its SAVE EDIT would otherwise be the one authority action not covered
-  // by the disabled-controls sweep below.
-  useEffect(() => {
-    if (isStale) setEditingEntryId(null);
-  }, [isStale]);
+  // A stray in-progress edit form must not survive into the stale or
+  // refining state. SAVE EDIT/CANCEL/the label input now carry their own
+  // disabled={controlsDisabled} directly (belt-and-suspenders -- this alone
+  // used to be the only thing covering them), but useLayoutEffect (not the
+  // passive useEffect this used to be) still closes the form itself in the
+  // exact same commit controlsDisabled flips, matching StoryEditor.tsx's own
+  // synchronous-reset convention rather than leaving a stale form visible
+  // for one committed-but-not-yet-effected render.
+  useLayoutEffect(() => {
+    if (controlsDisabled) setEditingEntryId(null);
+  }, [controlsDisabled]);
 
   const readiness = assessBootstrapReviewReadiness(manifest, assignments);
   const actorCandidates = admittedEntityCandidates(manifest, 'actor_proposal');
@@ -133,7 +150,7 @@ export const BootstrapReviewWorkspace: React.FC<BootstrapReviewWorkspaceProps> =
                   <>
                     <button
                       type="button"
-                      disabled={isStale}
+                      disabled={controlsDisabled}
                       onClick={() => onDecide(entry.id, 'approved')}
                       className="flex items-center gap-1 rounded bg-[#1A1A1A] px-2.5 py-1 text-[10px] font-bold uppercase tracking-wider text-[#FDFCF8] hover:bg-[#333333] disabled:cursor-not-allowed disabled:opacity-40"
                     >
@@ -142,7 +159,7 @@ export const BootstrapReviewWorkspace: React.FC<BootstrapReviewWorkspaceProps> =
                     </button>
                     <button
                       type="button"
-                      disabled={isStale}
+                      disabled={controlsDisabled}
                       onClick={() => beginEdit(entry)}
                       className="flex items-center gap-1 rounded border border-[#1A1A1A]/30 bg-[#FDFCF8] px-2.5 py-1 text-[10px] font-bold uppercase tracking-wider text-[#1A1A1A] hover:bg-white disabled:cursor-not-allowed disabled:opacity-40"
                     >
@@ -153,7 +170,7 @@ export const BootstrapReviewWorkspace: React.FC<BootstrapReviewWorkspaceProps> =
                 )}
                 <button
                   type="button"
-                  disabled={isStale}
+                  disabled={controlsDisabled}
                   onClick={() => onDecide(entry.id, 'rejected')}
                   className="flex items-center gap-1 rounded border border-[#8B263E]/40 bg-[#FDFCF8] px-2.5 py-1 text-[10px] font-bold uppercase tracking-wider text-[#8B263E] hover:bg-[#8B263E]/10 disabled:cursor-not-allowed disabled:opacity-40"
                 >
@@ -168,21 +185,24 @@ export const BootstrapReviewWorkspace: React.FC<BootstrapReviewWorkspaceProps> =
                 <input
                   data-role="edit-working-label"
                   value={editLabel}
+                  disabled={controlsDisabled}
                   onChange={(event) => setEditLabel(event.target.value)}
-                  className="min-w-[10rem] flex-1 rounded border border-[#1A1A1A]/30 bg-white px-2 py-1 text-xs text-[#1A1A1A]"
+                  className="min-w-[10rem] flex-1 rounded border border-[#1A1A1A]/30 bg-white px-2 py-1 text-xs text-[#1A1A1A] disabled:cursor-not-allowed disabled:opacity-40"
                   placeholder="Working label"
                 />
                 <button
                   type="button"
+                  disabled={controlsDisabled}
                   onClick={() => saveEdit(entry.id, entry.proposed)}
-                  className="rounded bg-[#1A1A1A] px-2.5 py-1 text-[10px] font-bold uppercase tracking-wider text-[#FDFCF8] hover:bg-[#333333]"
+                  className="rounded bg-[#1A1A1A] px-2.5 py-1 text-[10px] font-bold uppercase tracking-wider text-[#FDFCF8] hover:bg-[#333333] disabled:cursor-not-allowed disabled:opacity-40"
                 >
                   SAVE EDIT
                 </button>
                 <button
                   type="button"
+                  disabled={controlsDisabled}
                   onClick={() => { setEditingEntryId(null); setEditLabel(''); }}
-                  className="rounded border border-[#1A1A1A]/20 px-2.5 py-1 text-[10px] font-bold uppercase tracking-wider text-[#5A554E] hover:bg-[#E5E2D9]"
+                  className="rounded border border-[#1A1A1A]/20 px-2.5 py-1 text-[10px] font-bold uppercase tracking-wider text-[#5A554E] hover:bg-[#E5E2D9] disabled:cursor-not-allowed disabled:opacity-40"
                 >
                   CANCEL
                 </button>
@@ -197,7 +217,7 @@ export const BootstrapReviewWorkspace: React.FC<BootstrapReviewWorkspaceProps> =
           <span>POV Actor</span>
           <select
             data-role="pov-select"
-            disabled={isStale}
+            disabled={controlsDisabled}
             value={assignments.activePovActorId ?? ''}
             onChange={(event) => onAssignPovActor(event.target.value || null)}
             className="w-full rounded border border-[#1A1A1A]/30 bg-white px-2 py-1.5 text-xs font-serif italic text-[#1A1A1A] disabled:cursor-not-allowed disabled:opacity-40"
@@ -213,7 +233,7 @@ export const BootstrapReviewWorkspace: React.FC<BootstrapReviewWorkspaceProps> =
           <span>Current Location</span>
           <select
             data-role="current-location-select"
-            disabled={isStale}
+            disabled={controlsDisabled}
             value={assignments.currentLocationId ?? ''}
             onChange={(event) => onAssignCurrentLocation(event.target.value || null)}
             className="w-full rounded border border-[#1A1A1A]/30 bg-white px-2 py-1.5 text-xs font-serif italic text-[#1A1A1A] disabled:cursor-not-allowed disabled:opacity-40"
@@ -237,8 +257,9 @@ export const BootstrapReviewWorkspace: React.FC<BootstrapReviewWorkspaceProps> =
           </div>
           <button
             type="button"
+            disabled={isRefining}
             onClick={onRegenerate}
-            className="mx-auto flex items-center gap-1.5 rounded bg-[#1A1A1A] px-3 py-1.5 text-[10px] font-bold uppercase tracking-wider text-[#FDFCF8] hover:bg-[#333333]"
+            className="mx-auto flex items-center gap-1.5 rounded bg-[#1A1A1A] px-3 py-1.5 text-[10px] font-bold uppercase tracking-wider text-[#FDFCF8] hover:bg-[#333333] disabled:cursor-not-allowed disabled:opacity-40"
           >
             <RefreshCw className="h-3 w-3" />
             REGENERATE REVIEW
@@ -253,7 +274,7 @@ export const BootstrapReviewWorkspace: React.FC<BootstrapReviewWorkspaceProps> =
         </div>
       )}
 
-      <StructuralReviewPanel manifest={manifest} onClose={onClose} />
+      <StructuralReviewPanel manifest={manifest} onClose={() => { if (!isRefining) onClose(); }} />
     </div>
   );
 };
