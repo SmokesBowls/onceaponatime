@@ -20,7 +20,7 @@ B3c — Author Decisions + Explicit Assignments  ✅ done, pushed (1a93177)
         ↓
 B3d — Atomic Canonical Admission  ✅ done, not yet pushed (14d86e2)
         ↓
-B4 — Optional AI Refinement  ← split into B4a/B4b/B4c/B4d; B4a ✅ done, not yet pushed (ded2db7)
+B4 — Optional AI Refinement  ← split into B4a/B4b/B4c/B4d; B4a ✅ done, pushed (ded2db7); B4b contract frozen, awaiting RED
 ```
 
 ### B2 — Deterministic Bootstrap Discovery ✅ shipped
@@ -1249,6 +1249,245 @@ Deliberately not in B4a's RED gate, each reserved for its named later increment:
 `BootstrapManifest`, suggested-edit attachment, any React component, any live HTTP route,
 idempotency/retry-ordinal transport, and any change reachable from `BootstrapReviewWorkspace.tsx` or
 `StoryEditor.tsx`.
+
+#### B4b — Refinement Merge  ← contract frozen; awaiting RED
+
+```text
+BootstrapManifest
+        +
+BootstrapRefinementArtifact
+        ↓
+deterministic additive merge
+        ↓
+new (combined) BootstrapManifest
+```
+
+**Scope.** B4b answers only the merge semantics already specified in this document's master
+"Additive merge into the existing manifest" section above, narrowed into exact file/function/type
+names: how new AI proposals are added, how suggested edits attach to their existing B2 target entry,
+how IDs/provenance survive the required manifest/entry-ID rebase, how duplicates/collisions are
+handled, and how original B2 proposals remain untouched. B4b calls no Hermes provider, renders no
+React, adds no `REFINE` action, adds no HTTP route, and does not touch
+`BootstrapReviewWorkspace.tsx`, `bootstrapReview.ts`, `StoryEditor.tsx`, or `prepareBootstrap.ts` --
+those are B4c's and B4d's jobs. It consumes an already-validated `BootstrapRefinementArtifact`
+exactly as B4a produces it; it does not re-invoke Hermes or re-run `validateBootstrapRefinementOutput`
+against raw text.
+
+**B4b baseline binding -- merge only into the exact baseline the refinement was produced against.**
+
+```text
+Requirements, all checked at merge time (never assumed from B4a having checked them earlier):
+- baseline.id === artifact.value.baselineManifestId
+- baseline.boundSourceFingerprint === artifact.value.boundSourceFingerprint
+  (and baseline.boundSourceDocuments still matches that fingerprint)
+- baseline is still refinement-eligible right now:
+    every entry decision === 'pending'
+    no entry carries an admitted value
+
+If author review has begun, the source changed, or the manifest otherwise changed since the
+artifact was produced:
+        -> fail closed
+        -> never transplant a refinement artifact onto a merely "compatible" manifest
+```
+
+This is a real trust boundary, not a formality: B4a only ever runs against a fresh, untouched review
+artifact, but nothing prevents time passing between B4a producing an artifact and something later
+calling the merge -- an author could have started deciding entries in the meantime, or the bound
+source could have changed. B4b re-derives and re-checks eligibility itself rather than trusting that
+"B4a must have validated this already." A direct consequence: **merging an already-merged manifest
+against the same artifact must fail** -- the combined manifest's own `id` is no longer
+`artifact.value.baselineManifestId` (that field still names the *original* pre-merge baseline), so
+the identity check above rejects it on its own, with no separate session/idempotency mechanism
+needed. B4b is pure repeat-safe by construction; click/retry semantics remain B4c's problem.
+
+**Baseline-entry preservation -- frozen explicitly, not left to infer from "structurally unchanged."**
+
+```text
+For every pre-existing B2/B3a manifest entry, the merge may NOT alter:
+  - proposed
+  - evidence
+  - discoveryConfidence
+  - supportedForApplication
+  - decision
+  - admitted
+
+It may only:
+  - rebase the entry's own id (required, because entriesFingerprint changes)
+  - attach suggestedRefinements metadata defined by B4b
+```
+
+`discoveryConfidence` gets called out on purpose: it is B2 detector rationale (why *deterministic*
+discovery surfaced a candidate) and AI refinement must never acquire or modify it, on existing
+entries or its own. A new AI-addition entry gets its own `refinementProvenance` -- never a fabricated
+or copied `discoveryConfidence`, which would misrepresent an AI proposal as having B2's evidentiary
+grammar-based backing it never had.
+
+**Suggested-edit targeting is exact-identity only, never label-based.**
+
+```text
+suggested edit target resolution:
+        candidate.refinesEntryId (already validated by B4a against the original baseline)
+        -> rebased under the baselineEntryId -> combinedEntryId map
+        -> must name a real combined-manifest entry of the SAME proposal kind
+
+Never:
+  - working-label lookup
+  - alias lookup
+  - fuzzy/"closest" matching
+
+If the rebased target is missing, or present but of the wrong kind:
+        -> reject the whole merge, not just that one suggestion
+```
+
+**Files.**
+
+- `src/lib/bootstrapManifest.ts` (existing B1 domain module, extended, not replaced) --
+  new optional schema fields only, matching the master contract's "narrow schema extensions":
+  - `BootstrapManifestEntry` gains `refinementProvenance?: BootstrapRefinementProvenance` (present
+    only on an entry that originated as a B4 AI *addition*) and
+    `suggestedRefinements?: readonly BootstrapSuggestedRefinement[]` (present only on a deterministic
+    entry that has one or more AI *suggested edits* attached; an array because more than one candidate
+    may target the same baseline entry).
+  - `BootstrapManifest` gains `refinementMetadata?: BootstrapManifestRefinementMetadata`, present only
+    on a combined (post-merge) manifest, absent on a pure B2 baseline.
+  - **Provenance ownership is split cleanly in two, one exact record plus linkage -- never copied and
+    independently reconstructed per entry:**
+    ```text
+    manifest.refinementMetadata               (ONE artifact-level record, whole-manifest scope)
+      baselineManifestId
+      entryIdMap
+      artifactDigest
+      rawOutputDigest
+      receipt                                 (the exact InferenceReceipt -- lives here ONCE)
+
+    entry.refinementProvenance /
+    suggestedRefinement.provenance            (candidate-level linkage only)
+      candidateDigest
+      refinesBaselineEntryId?                 (present for a suggestion, absent for an addition)
+    ```
+    An entry's own provenance never re-embeds `receipt`, `artifactDigest`, or `baselineManifestId` --
+    those are already the manifest's own `refinementMetadata`, one exact record per manifest. Copying
+    the receipt into every entry would let entry-level and manifest-level copies drift; a single
+    manifest-level record plus a per-entry digest linkage cannot.
+  - `validateBootstrapManifestStructure()` is extended to validate these fields' content when present
+    (not merely tolerate their absence) -- an attacker-shaped `refinementProvenance`/
+    `suggestedRefinements`/`refinementMetadata` must fail closed like every other manifest field.
+  - `fingerprintEntrySources()`/`entriesFingerprint` and `expectedBootstrapManifestId()` are extended
+    so this new metadata participates in combined-manifest identity, per the master contract.
+  - **Origin finding to resolve in RED, not silently duplicated:** the private `expectedEntryId()`
+    (and manifest-ID composition) is not currently exported. B4b's merge must rebase every baseline
+    entry's ID under the new combined manifest ID using *exactly* B1's own identity rule, not a
+    reimplementation that could drift from it -- mirroring the B3c finding that led to exporting
+    `resolveAdmittedBootstrapProposal()`. Export what B4b needs from `bootstrapManifest.ts` rather than
+    recomputing the ID format in the new module.
+- `src/lib/bootstrapRefinementMerge.ts` (new, pure, browser-safe) --
+  `mergeBootstrapRefinementArtifact(baseline: BootstrapManifest, artifact: BootstrapRefinementArtifact):
+  BootstrapManifest`, the sole merge/normalization boundary. Mutates neither argument.
+
+**Revalidation the merge performs itself (never assumes the artifact arrived untampered).** Before
+merging: `artifact.receipt.operation === 'onceaponatime.bootstrap.refine'`; the baseline-binding checks
+above; and every candidate's evidence citations are re-resolved against `baseline.boundSourceDocuments`
+(exact offsets, exact text) rather than trusting the artifact's embedded `exactText` at face value --
+the artifact may have round-tripped through an untrusted transport by the time a later increment (B4c)
+wires it to a live HTTP boundary, even though B4b itself adds no transport.
+
+**Rebase and append.**
+
+- Every baseline entry is rebased to a new entry ID under the combined manifest's own (necessarily
+  different) ID, because the entries fingerprint changes once AI entries are appended. An immutable
+  one-to-one `baselineEntryId -> combinedEntryId` map is retained (derived by original kind/
+  sourceIndex/order) and both sides are validated.
+- Each `refines_entry_id === null` candidate becomes a new ordinary pending, application-supported
+  `BootstrapManifestEntry` (ordinary B1 entity-proposal shape derived from the candidate, `id` derived
+  from `candidateId`, `evidence` derived from the candidate's citations re-resolved against `baseline
+  .boundSourceDocuments`), carrying `refinementProvenance` with `refinesBaselineEntryId` absent and no
+  `discoveryConfidence`.
+- Each `refines_entry_id !== null` candidate becomes one `BootstrapSuggestedRefinement` appended to
+  its *rebased* target entry's `suggestedRefinements` array, per the exact-identity targeting rule
+  above. It does not become a new manifest entry and does not touch the target's own
+  `proposed`/`decision`/`admitted` fields.
+- AI addition ordering is deterministic (candidate order as returned by B4a, which is itself
+  deterministic given identical validated input).
+
+**Duplicates/collisions -- fail closed, never silently coalesced or renamed.**
+
+- An AI addition's derived proposal id colliding with *any* baseline entry's `proposed.id` fails the
+  whole merge (this is the "shortened-ID collision with a baseline proposal" half of the master
+  contract's identity rule; the "collision with another candidate" half is already B4a's job via
+  `assertNoIdentityCollisions`, re-checked here only as defense in depth, not re-derived).
+- The merge performs no deduplication, semantic ranking, automatic conflict resolution, decision,
+  assignment, preparation, or canonical write. Multiple suggestions on one entry, and multiple
+  additions citing overlapping source spans, are preserved as-is for the (not-yet-built) B3 surface to
+  display -- B4b does not rank or prefer among them.
+
+**Combined manifest identity.** The result receives its own B1-derived `id`/`boundSourceFingerprint`/
+`entriesFingerprint` (via the exported rebasing rule above, not a reimplementation) plus
+`refinementMetadata`. All of that is inside the validated/fingerprinted projection. The original
+baseline artifact is not mutated or discarded by this function -- retaining it across a review session
+remains a B4c lifecycle concern, not B4b's.
+
+**Explicitly deferred out of B4b** (named later increments, not abandoned):
+
+- `decideBootstrapManifestEntry()` gaining a `selectedRefinementCandidateDigest` recording path, and
+  any UI for choosing a suggestion -- both belong to B4c, the increment that actually wires an author
+  interaction to "select this suggestion" through the same B3 review controls.
+- `BootstrapReceiptEntry` (B3d's receipt projection) copying `refinementProvenance`/
+  `selectedRefinementCandidateDigest` through -- that is B4d's end-to-end proof, once B4c exists to
+  produce a real decided-and-applied combined manifest to prove it against.
+- Any live wiring of `mergeBootstrapRefinementArtifact()` into `StoryEditor.tsx` or
+  `BootstrapReviewWorkspace.tsx` -- B4b proves the pure function in isolation only.
+
+**B4b RED gate (draft -- not yet frozen).** Freeze failing tests proving, against hand-built baseline
+manifests and hand-built `BootstrapRefinementArtifact` fixtures (no Hermes call, no B4a invocation
+required):
+
+1. `mergeBootstrapRefinementArtifact()` is unreachable from `BootstrapReviewWorkspace.tsx`,
+   `bootstrapReview.ts`, `StoryEditor.tsx`, and `prepareBootstrap.ts` (reachable-import-graph scan,
+   same pattern as B4a's #1);
+2. original entries are unchanged: every baseline entry's `proposed`/`evidence`/`discoveryConfidence`/
+   `supportedForApplication`/`decision`/`admitted` survives byte-for-byte and in order under the
+   required ID rebase; the `baselineEntryId -> combinedEntryId` map is exact and one-to-one and
+   validates on both sides;
+3. AI additions are additive only: an addition candidate becomes an ordinary new pending entry with
+   `refinementProvenance` and no `discoveryConfidence`, never mutating any existing entry;
+4. suggestions attach without rewriting targets: a suggestion candidate becomes `suggestedRefinements`
+   metadata on its rebased target and never a new entry, never touching the target's own
+   proposed/decision/admitted;
+5. a wrong or stale baseline rejects: mismatched `artifact.receipt.operation`, `baselineManifestId`, or
+   `boundSourceFingerprint` against `baseline` each fail closed;
+6. a partially reviewed baseline rejects: any non-`pending` decision or any `admitted` value anywhere
+   in `baseline.entries` fails closed before any merging happens, even though B4a should already have
+   refused to produce such an artifact;
+7. a missing suggestion target rejects: a (post-rebase) `refinesBaselineEntryId` that names no real
+   combined-manifest entry fails the whole merge closed;
+8. a wrong-kind suggestion target rejects: a (post-rebase) target that exists but is of a different
+   proposal kind than the candidate fails the whole merge closed;
+9. B2 confidence untouched: existing `discoveryConfidence` values are never read, copied, or
+   reinterpreted by anything in the merge path, and no AI entry ever fabricates one;
+10. same input gives the same merged manifest: identical valid `(baseline, artifact)` produces a
+    structurally identical combined manifest across repeated calls (deterministic addition ordering,
+    deterministic entry-ID rebase);
+11. already-merged input doesn't accept the same stale artifact: calling the merge again with the
+    *combined* manifest as `baseline` and the same original `artifact` fails closed via the baseline-
+    binding check (the artifact's `baselineManifestId` still names the pre-merge manifest);
+12. source citations are replayed against `baseline.boundSourceDocuments` again, not trusted from the
+    artifact: a hand-tampered artifact whose embedded `exactText` no longer matches the real source
+    slice at its stated offsets fails closed;
+13. all provenance participates in manifest fingerprinting: two otherwise-identical merges whose only
+    difference is `refinementMetadata` or an entry's `refinementProvenance`/`suggestedRefinements`
+    produce different combined-manifest identities;
+14. the caller-owned `baseline` and `artifact` arguments remain immutable (frozen-input assertions),
+    and a zero-candidate artifact produces a combined manifest structurally equal to the rebased
+    baseline plus a real (empty-`entryIdMap`-only-covering-baseline) `refinementMetadata`, not a bypass
+    that skips rebasing.
+
+**Non-goals (B4b):** no Hermes call, no React/UI, no `REFINE` action, no HTTP route, no
+idempotency/retry transport, no `decideBootstrapManifestEntry()` change, no `prepareBootstrap()` or
+`BootstrapReceiptEntry` change, no canonical `StoryProject` mutation, no ranking/deduplication/
+automatic conflict resolution.
+
+Reviewed and frozen. Per the established B2/B3/B3d/B4a pattern, RED and GREEN remain separate
+checkpoints from this freeze: no B4b production implementation is authorized by this draft alone.
 
 ## Post-B4 backlog — explicitly not part of B3c/B3d
 
