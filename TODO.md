@@ -20,7 +20,7 @@ B3c — Author Decisions + Explicit Assignments  ✅ done, pushed (1a93177)
         ↓
 B3d — Atomic Canonical Admission  ✅ done, not yet pushed (14d86e2)
         ↓
-B4 — Optional AI Refinement  ← split into B4a/B4b/B4c/B4d; B4a ✅ done, pushed (ded2db7); B4b ✅ done, not yet pushed (de787b0); B4c/B4d not started
+B4 — Optional AI Refinement  ← split into B4a/B4b/B4c/B4d; B4a ✅ done, pushed (ded2db7); B4a hardening ✅ done, pushed (3ab5357); B4b ✅ done, pushed (de787b0); B4c1 contract frozen, awaiting RED; B4c2/B4c3/B4d not started
 ```
 
 ### B2 — Deterministic Bootstrap Discovery ✅ shipped
@@ -1488,6 +1488,326 @@ automatic conflict resolution.
 
 Reviewed and frozen. Per the established B2/B3/B3d/B4a pattern, RED and GREEN remain separate
 checkpoints from this freeze: no B4b production implementation is authorized by this draft alone.
+
+
+#### B4c — Optional Refinement UI + Lifecycle  ← B4c1 contract frozen; B4c2 scoped only; B4c3 undesigned
+
+Drafted against the real current surfaces (read in full before writing this): `StoryEditor.tsx`
+(review-session state: `reviewSession`/`isReviewOpen`/`isApplyingBootstrap`/`bootstrapReceipt`, the
+`isApplyingBootstrapRef`/`applyAttemptRef`/`projectIdRef` re-entrancy-and-staleness-guard pattern,
+`isReviewSessionStale`, `handleBeginStructuralReview`/`handleApplyBootstrap`), `BootstrapReviewWorkspace
+.tsx` (its closed prop list: `manifest`/`assignments`/`isStale`/`onDecide`/`onAssignPovActor`/
+`onAssignCurrentLocation`/`onRegenerate`/`onClose`, and that every `disabled={isStale}` site plus
+`StructuralReviewPanel`'s always-enabled `onClose` are the exact controls needing a freeze), `App.tsx`
+(the plain `fetch('/api/framework/execute', ...)` + `createInferenceArtifact(data.stage1.value,
+data.stage1.receipt)` client pattern, and `handleApplyBootstrap`'s exact
+`workbenchOperationError('bootstrap', err)` shape), `server.ts` (every existing route registers with
+`app.post(path, handler)` *after* the single app-wide `app.use(express.json({limit: '15mb'}))` at the
+top of the file, and none does route-specific raw-body parsing or duplicate-key detection), and
+`workbenchErrors.ts` (`WorkbenchOperationSource = 'execute' | 'promote' | 'bootstrap'`, no
+`'bootstrap-refine'` value yet).
+
+**One origin finding surfaced by this inspection, already resolved separately:**
+`server/bootstrapRefinement.ts`'s `refineBootstrapManifest()` never called
+`validateBootstrapManifestStructure(baseline)` itself -- fixed as its own hardening slice (RED
+`71c5aed`, GREEN `b24d806`) before this contract, not buried inside B4c1. `refineBootstrapManifest()`
+now independently validates structure before eligibility and before the provider runs, so B4c1's route
+does not need to duplicate that check -- it inherits it for free.
+
+**Duplicate-key HTTP detection is retained, not dropped.** An earlier pass of this draft proposed
+following every other route's plain `express.json()` convention on the reasoning that nothing else
+here does duplicate-key detection. That reasoning does not survive scrutiny: this was explicitly
+deferred from B4a into B4c, not abandoned, and the bootstrap path has deliberately stronger fail-closed
+semantics than the older routes throughout this project (B4a's own raw-model-output parser exists for
+exactly this reason). Plain `express.json()` silently resolves `{"id":"trusted","id":"different"}` to
+one key before any validator ever sees it -- indistinguishable from an honest single-key object. The
+real trust boundary for this route is:
+
+```text
+untrusted HTTP request bytes
+        ↓
+duplicate-key-safe parse (src/lib/bootstrapRefinement.ts's own parseJsonNoDuplicateKeys(),
+  reused here exactly as B4a already reuses it for the model's raw output -- not
+  reimplemented a second time)
+        ↓
+exact request envelope shape: { "baseline": <BootstrapManifest> } and nothing else
+        ↓
+refineBootstrapManifest(baseline) -- which now validates full manifest structure itself
+  (the B4a hardening fix above), then eligibility, then the provider
+```
+
+**The App/StoryEditor operation boundary is narrower than the first draft had it: the server runs only
+B4a; the merge (B4b) happens back on the client, inside the same `try/catch` that already owns
+transport and server-rejection handling.** The first draft had the *server* call
+`mergeBootstrapRefinementArtifact()` and return a combined manifest directly. That hides a real
+failure-path gap: a client-side merge failure occurring *after* a successful fetch would land outside
+whatever `try/catch` handles the fetch, leaving `StoryEditor` without the one error-setting path every
+other Workbench operation already has. Since `bootstrapRefinementMerge.ts` is already pure and
+browser-safe by design (no `node:crypto`, no server import -- true since B4b shipped), there is no
+reason to run it server-side at all. One boundary, one `try/catch`:
+
+```text
+StoryEditor
+  exact current review manifest (reviewSession.manifest)
+        ↓
+App.handleRefineBootstrap(baseline)          -- ONE try/catch covers everything below
+        ↓
+POST /api/bootstrap/refine  { "baseline": baseline }
+        ↓
+server: duplicate-key-safe parse -> exact envelope check -> refineBootstrapManifest(baseline)
+        ↓ (success)                                          ↓ (any failure)
+{ success: true, artifact: BootstrapRefinementArtifact }    { success: false, error }
+        ↓
+App: createInferenceArtifact(data.artifact.value, data.artifact.receipt)
+        ↓
+App: mergeBootstrapRefinementArtifact(baseline, artifact)    -- still inside the same try
+        ↓ (success)                                          ↓ (throws)
+combined BootstrapManifest returned                          caught by the same catch,
+        ↓                                                    workbenchOperationError('bootstrap-refine', err)
+StoryEditor atomically replaces only reviewSession.manifest
+```
+
+App still never owns or mutates the review session, and still never touches canonical `StoryProject`
+for this operation -- it only computes and returns the combined manifest, exactly as
+`handleApplyBootstrap` already computes and returns a receipt without owning `StoryEditor`'s session
+state.
+
+B4c is split into three increments, only the first of which is drafted in full below. **B4c3's
+suggestion-selection semantics are deliberately not designed yet** -- per instruction, no RED freezes
+until that's resolved as its own explicit discussion, not invented casually alongside transport work.
+The current bias (not yet checked against `decideBootstrapManifestEntry()`/the receipt path, so not a
+decision) is that selecting a suggestion should probably still produce the existing B3 `edited`
+decision rather than a fifth decision state, with the selected candidate digest recorded as provenance
+orthogonal to the decision itself.
+
+```text
+B4c1 — REFINE transport + lifecycle
+  wires REFINE end to end (client action -> HTTP route -> B4a -> client-side B4b merge ->
+  replaces the in-memory review manifest) using BootstrapReviewWorkspace.tsx exactly as it
+  exists today except for one new disabling prop. AI additions appear automatically as
+  ordinary new pending entries (the panel already renders manifest.entries generically); AI
+  suggestedRefinements attach but render nothing yet -- no code anywhere reads that field
+  until B4c2.
+        ↓
+B4c2 — render AI additions/suggestions in review
+  BootstrapReviewWorkspace.tsx (and/or StructuralReviewPanel.tsx) visually distinguishes an
+  origin: refinementProvenance present, and shows suggestedRefinements beside their target
+  entry. Read-only -- no new decision path.
+        ↓
+B4c3 — explicit author selection of a suggested edit
+  NOT DESIGNED YET. Needs its own discussion: what UI action "selects" a suggestion, whether
+  it's a distinct decision from EDIT or a special case of EDIT that records
+  selectedRefinementCandidateDigest (per the master contract's "Additive merge" section),
+  whether decideBootstrapManifestEntry()'s signature changes, and how a selection interacts
+  with an already-in-progress manual edit of the same entry. No RED freezes for B4c3 until
+  this is resolved.
+```
+
+##### B4c1 — REFINE transport + lifecycle  ← contract frozen; awaiting RED
+
+**Scope.** Exactly one new author action: an explicit `REFINE WITH HERMES` control, available only
+on a completely untouched review session, that calls B4a once via the new route, merges the result
+through B4b once on the client, and replaces only `reviewSession.manifest` in `StoryEditor.tsx`'s
+existing local state. `reviewSession.assignments` is untouched (REFINE is only offered while both are
+still `null` anyway). No `StoryProject` mutation, no auto-approval, no suggestion selection, and no
+second review/APPLY path -- the existing `BootstrapReviewWorkspace`/`decideBootstrapReviewEntry`/
+`handleApplyBootstrap`/`prepareBootstrap()` chain is completely unchanged and is the only thing that
+ever decides, assigns, or applies anything.
+
+**REFINE is enabled only if, re-derived fresh every render exactly like `isReviewSessionStale` already
+is -- never cached in its own state:**
+
+```text
+- a review session exists (reviewSession !== null) and is open
+- the session is not stale (!isReviewSessionStale)
+- isBootstrapRefinementEligible(reviewSession.manifest)    (B4a's own export: every entry
+                                                              pending, no admitted value, no
+                                                              existing refinementMetadata)
+- reviewSession.assignments.activePovActorId === null
+- reviewSession.assignments.currentLocationId === null      (B4a cannot check this --
+                                                               assignments live outside
+                                                               BootstrapManifest entirely;
+                                                               an assignment is author review
+                                                               activity even though it lives
+                                                               outside the manifest, so B4c
+                                                               must enforce it)
+- no refinement request is already in flight (!isRefining)
+```
+
+Once any decision or assignment exists, or the session has already been through one successful
+refine (`refinementMetadata` now present), the control disappears (never disables-but-visible) --
+matching the existing BEGIN/APPLY convention of only showing a control while it is truthfully
+actionable. The author's only way back to a refinable session is the existing explicit
+REGENERATE/BEGIN path, which already discards decisions by design.
+
+**While REFINE is in flight, none of the following may happen:**
+
+```text
+- APPROVE
+- EDIT (including SAVE EDIT)
+- REJECT
+- POV or current-location assignment changes
+- APPLY
+- a second REFINE
+- CLOSE
+- REGENERATE (unreachable in practice -- staleness and an in-flight refine cannot co-occur
+  under the eligibility expression above, since REFINE is never offered while stale)
+```
+
+**Files.**
+
+- `src/App.tsx` -- new `handleRefineBootstrap(baseline: BootstrapManifest): Promise<BootstrapManifest>`.
+  One `try/catch` covering the entire diagram above: `setWorkbenchError(null)`, `fetch('/api/bootstrap/
+  refine', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({
+  baseline }) })`, parse `{ success, artifact, error }`, throw on `!success`, reconstruct via
+  `createInferenceArtifact(data.artifact.value, data.artifact.receipt)` (the exact existing
+  `stage1`/`stage2` pattern), call `mergeBootstrapRefinementArtifact(baseline, artifact)` -- still
+  inside the same `try` -- and return the combined manifest. The single `catch` covers transport,
+  server-side rejection, and a client-side merge failure identically:
+  `setWorkbenchError(workbenchOperationError('bootstrap-refine', err)); throw err;`. Never calls
+  `updateActiveProject` -- there is nothing canonical to update. Passed to `StoryEditor` as a new
+  `onRefineBootstrap` prop, mirroring `onApplyBootstrap`'s existing wiring shape.
+- `src/lib/workbenchErrors.ts` -- `WorkbenchOperationSource` gains `'bootstrap-refine'` (additive; the
+  existing `'execute' | 'promote' | 'bootstrap'` values and every existing gate on them are untouched).
+- `server.ts` -- new `app.post('/api/bootstrap/refine', express.raw({ type: 'application/json', limit:
+  '15mb' }), async (req, res) => { ... })`, registered *before* the file's existing
+  `app.use(express.json({ limit: '15mb' }))` line (Express matches middleware/routes in registration
+  order; an earlier specific route match means the later app-wide JSON body-parser never runs for this
+  one path -- every other route keeps using the app-wide parser unchanged). Handler: decode `req.body`
+  (a `Buffer`) via `new TextDecoder('utf-8', { fatal: true }).decode(...)` (throws on invalid UTF-8,
+  unlike Express's own lossy default decode); parse with `parseJsonNoDuplicateKeys()` (imported from
+  `src/lib/bootstrapRefinement.ts`, reused exactly as-is -- not reimplemented); require the parsed
+  value's key set to be exactly `{ baseline }`; call `refineBootstrapManifest(baseline)` (which now,
+  per the hardening fix, validates full structure and eligibility itself before ever touching the
+  provider); `res.json({ success: true, artifact })` on success. A malformed envelope (bad JSON,
+  duplicate keys, wrong key set) responds `400`; any `refineBootstrapManifest()` throw (structural,
+  eligibility, or provider/model failure) responds `500` with `{ success: false, error }`, mirroring
+  the existing `400`-for-bad-input/`500`-for-pipeline-failure split already used by
+  `/api/framework/execute`. Not perfectly taxonomic -- a malformed *manifest* is technically client
+  input too -- but resolving that cleanly would need domain error classes or otherwise classifying
+  thrown errors, machinery this slice deliberately does not add just for prettier HTTP codes; what
+  matters is that the route fails closed and the client gets one truthful failure path either way.
+  Frozen meaning, so no one later reads `500` as necessarily "provider outage":
+  ```text
+  HTTP 400 means: the server could not admit the request into the bootstrap-refinement
+                  operation boundary at all (malformed envelope/transport).
+  HTTP 500 means: the request entered that boundary, but refinement did not successfully
+                  produce an artifact (structural/eligibility/provider/model failure --
+                  refineBootstrapManifest()'s own thrown reason is the truth, not the code).
+  ```
+  The route never imports or calls `mergeBootstrapRefinementArtifact` -- merge is client-side only.
+- `src/components/StoryEditor.tsx` -- new `isRefining`/`isRefiningRef`/`refineAttemptRef` state,
+  exactly mirroring `isApplyingBootstrap`/`isApplyingBootstrapRef`/`applyAttemptRef`'s existing
+  re-entrancy-and-late-completion-guard shape (including the same `useLayoutEffect([project.id])`
+  reset and the same attempt-ordinal/project-id check before ever touching state after an await). New
+  `handleRefineBootstrap` local handler calling the new `onRefineBootstrap` prop; on success (and only
+  if the attempt/project checks still match) replaces `reviewSession.manifest` with the returned
+  combined manifest via `setReviewSession((prev) => prev ? { ...prev, manifest: combined } : prev)` --
+  `assignments` untouched. On failure, catches and does nothing further (App already recorded the
+  error; the existing review session survives exactly as `handleApplyBootstrap` already does today).
+  New `REFINE WITH HERMES` button rendered as a sibling alongside the existing APPLY button (not
+  injected into `BootstrapReviewWorkspace`), visible only under the eligibility expression above.
+- `src/components/BootstrapReviewWorkspace.tsx` -- gains one new required prop, `readonly isRefining:
+  boolean`. Every existing `disabled={isStale}` site (the two decision-adjacent buttons and the two
+  assignment `<select>`s) becomes `disabled={isStale || isRefining}`. The `onClose` passed down to
+  `StructuralReviewPanel` is wrapped, not the panel itself touched: `onClose={() => { if (!isRefining)
+  onClose(); }}` -- freezes CLOSE during an in-flight refine without adding a prop to
+  `StructuralReviewPanel.tsx`.
+- `src/App.tsx` -- the existing APPLY button's `disabled={isApplyingBootstrap}` becomes
+  `disabled={isApplyingBootstrap || isRefining}` (defensive: REFINE and APPLY cannot both be truthfully
+  offered at once under correct eligibility gating, since APPLY requires full decision+assignment
+  completion and REFINE requires the opposite, but the freeze list is explicit that APPLY must be
+  unavailable during an in-flight refine regardless).
+
+**Success:**
+
+```text
+- the returned combined manifest replaces reviewSession.manifest exactly once
+- reviewSession.assignments remain exactly { activePovActorId: null, currentLocationId: null }
+- canonical StoryProject is unchanged (no updateActiveProject call anywhere in this path)
+- no entry is approved/edited/rejected automatically -- every entry in the combined
+  manifest, additions included, is decision: 'pending'
+- refinement becomes unavailable for this session going forward, because the combined
+  manifest now carries refinementMetadata (isBootstrapRefinementEligible() -> false)
+```
+
+**Failure (provider / transport / validation / merge -- all indistinguishable to the client, all
+handled identically by the one `try/catch` in `App.tsx`):**
+
+```text
+- the exact original reviewSession.manifest is retained (reference-unchanged, not merely
+  deep-equal)
+- reviewSession.assignments are retained exactly as they were
+- canonical StoryProject is unchanged
+- a visible WorkbenchOperationError with source 'bootstrap-refine' is recorded, scoped to
+  the originating project like every other WorkbenchOperationError already is
+- REFINE remains offered again immediately -- eligibility is re-derived fresh, never
+  latched by the failed attempt
+```
+
+**Late completion:** if the project, the bound source, or the review-session identity changed while a
+request was in flight (project switch, component unmount, source edit invalidating the session,
+REGENERATE, or CLOSE-then-reopen producing a new session), the returned result -- success or failure --
+is discarded: it may not overwrite the newer session, may not display a success that belongs to the
+old session, and may not re-enable or re-disable a control a subsequent render has already set for a
+different reason. Implemented via the same attempt-ordinal-plus-project-id ref check
+`handleApplyBootstrap` already uses, extended to also fail the check if the review session itself was
+replaced (a new session's own object identity, or a monotonically incrementing session generation
+counter if identity alone proves fragile once B4c2/B4c3 exist -- exact mechanism decided at RED time,
+not here).
+
+**B4c1 RED gate (draft -- not yet frozen).** Freeze failing tests proving, against the real
+`StoryEditor`/`BootstrapReviewWorkspace` component tree with a mocked `onRefineBootstrap` (mirroring
+`tests/bootstrapApply.test.tsx`'s existing mocked-`onApplyBootstrap` pattern) plus focused tests
+against the real server route handler and the real `App.handleRefineBootstrap` composition:
+
+1. REFINE is never invoked automatically by BEGIN/discovery/decision/assignment/APPLY -- only the
+   explicit control's own click calls it, exactly once per click;
+2. the control is visible/enabled only under the full eligibility expression above -- any single
+   decided entry, any assigned POV or location, any existing `refinementMetadata`, staleness, or an
+   in-flight request each independently hide or disable it (never merely gray-out-but-clickable);
+3. a successful call replaces only `reviewSession.manifest` with the exact returned combined manifest
+   -- `reviewSession.assignments` is reference-unchanged before/after, no `updateActiveProject` call
+   occurs, and the canonical `StoryProject` prop is unchanged; every resulting entry is `pending`;
+4. every control named in the in-flight freeze list above is disabled or inert for the exact duration
+   of the request, verified via a controlled never-resolving promise, then correctly re-enabled after
+   resolution;
+5. failure (rejected `onRefineBootstrap`, from a transport error, a server `{success:false}`, or a
+   thrown client-side merge) leaves `reviewSession` reference-unchanged, records a
+   `WorkbenchOperationError` with source `'bootstrap-refine'`, and leaves the REFINE control
+   immediately re-offerable;
+6. an immediate second click cannot double-invoke (re-entrancy guard identical in shape to B3d's);
+7. a project switch, component unmount, or review-session replacement while a request is in flight
+   makes its late success/failure inert -- cannot replace a different session, display its error, or
+   re-enable/disable controls a subsequent render already set for a different reason;
+8. the server route: a raw request body with duplicate top-level keys is rejected `400` without
+   `refineBootstrapManifest()` ever being called; a body whose key set is not exactly `{ baseline }`
+   is rejected `400`; invalid UTF-8 in the raw body is rejected rather than silently replaced/mangled;
+   a structurally malformed `baseline` is rejected (via the already-hardened
+   `refineBootstrapManifest()`) without ever reaching the provider; a success response's `artifact` is
+   exactly what `refineBootstrapManifest()` returned, unmodified in transit; the route never imports
+   `mergeBootstrapRefinementArtifact`;
+9. `App.handleRefineBootstrap()`: a thrown client-side `mergeBootstrapRefinementArtifact()` failure
+   (e.g. a hand-tampered artifact) is caught by the same `try/catch` as a transport failure and
+   produces the identical `workbenchOperationError('bootstrap-refine', ...)` shape -- no separate,
+   forgettable second error path;
+10. static reachable-import-graph confirmation that nothing in this path calls `prepareBootstrap()` or
+    mutates `StoryProject` directly, that `BootstrapReviewWorkspace.tsx`/`StoryEditor.tsx` never import
+    `mergeBootstrapRefinementArtifact` or `bootstrapRefinementMerge` themselves (only `App.tsx` does),
+    and that no direct browser-to-Hermes call exists (the only network call the browser makes is to
+    the new same-origin route).
+
+**Non-goals (B4c1):** no visual distinction of AI-origin entries or rendering of `suggestedRefinements`
+(B4c2); no suggestion-selection UI or `selectedRefinementCandidateDigest` (B4c3, undesigned); no
+idempotency-key/retry-ordinal transport (the attempt-ordinal ref guard is presentation-layer
+re-entrancy protection, not the idempotent-retry transport the master draft separately describes -- if
+that is still wanted, it is a distinct, explicitly scoped follow-up, not silently assumed present
+here); no change to `decideBootstrapManifestEntry()`; no server-side merge.
+
+B4c1 is reviewed and frozen. Per the established pattern, RED and GREEN remain separate checkpoints
+from this freeze: no B4c1 production implementation is authorized by this contract alone. B4c2 remains
+scoped above only at the paragraph level (not yet narrowed into exact files/props) and B4c3 remains
+explicitly undesigned -- neither is unblocked by this freeze.
 
 ## Post-B4 backlog — explicitly not part of B3c/B3d
 
