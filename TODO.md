@@ -20,7 +20,7 @@ B3c — Author Decisions + Explicit Assignments  ✅ done, pushed (1a93177)
         ↓
 B3d — Atomic Canonical Admission  ✅ done, not yet pushed (14d86e2)
         ↓
-B4 — Optional AI Refinement  ← split into B4a/B4b/B4c/B4d; B4a ✅ done, pushed (ded2db7); B4a hardening ✅ done, pushed (3ab5357); B4b ✅ done, pushed (de787b0); B4c1 ✅ done, pushed (fbf06ec); B4b suggestion-evidence hardening ✅ done, pushed (c50ce9e); B4c2 ✅ done, pushed (2ac1c7f); B4c3 ✅ done, pushed (6894214); B4d not started
+B4 — Optional AI Refinement  ← split into B4a/B4b/B4c/B4d; B4a ✅ done, pushed (ded2db7); B4a hardening ✅ done, pushed (3ab5357); B4b ✅ done, pushed (de787b0); B4c1 ✅ done, pushed (fbf06ec); B4b suggestion-evidence hardening ✅ done, pushed (c50ce9e); B4c2 ✅ done, pushed (2ac1c7f); B4c3 ✅ done, pushed (6894214); B4d contract frozen, RED not yet written
 ```
 
 ### B2 — Deterministic Bootstrap Discovery ✅ shipped
@@ -2297,6 +2297,122 @@ adding `entry.refinementProvenance === undefined` to the validity rule and contr
 exactly-one-match count replacing `.find()`-style first-match resolution, both enforced independently
 in `decideBootstrapManifestEntry()`, `selectBootstrapReviewSuggestion()`, and
 `validateBootstrapManifestStructure()`. RED is written against this contract next.
+
+##### B4d — End-to-End Authority Proof  ← contract frozen; awaiting RED
+
+Drafted after inspecting the exact current surfaces (not the master B4 draft's speculative prose):
+`BootstrapReceiptEntry`/`BootstrapReceipt`/`prepareBootstrap()` (`src/lib/prepareBootstrap.ts`, read in
+full), and every "explicitly deferred to B4d" note left behind by B4a/B4b/B4c3 (`TODO.md` lines ~1434,
+~2234, ~2286 as of this draft).
+
+**What B4d actually is, per the master contract's own words:** "B2 -> optional Hermes refinement -> B3
+review -> B3d `prepareBootstrap`, proven together against the real wired surfaces (not fresh mocks)."
+Two distinct things follow from that, both already promised by name in earlier increments' deferred
+sections, and nothing else:
+
+1. `BootstrapReceiptEntry` currently has exactly `entryId, kind, decision, supportedForApplication,
+   proposed, admitted, applied` -- no refinement provenance field of any kind, confirmed by reading
+   `prepareBootstrap.ts` in full. B4a's, B4b's, and B4c3's own deferred-scope notes all name this
+   specific gap as B4d's job: "`BootstrapReceiptEntry` copying `refinementProvenance`/
+   `selectedRefinementCandidateDigest` through."
+2. Every existing B4a/B4b/B4c1/B4c2/B4c3 test suite proves its own stage in isolation, against
+   hand-built fixtures standing in for the previous stage's output. None of them run the real
+   `buildBootstrapManifest() -> mergeBootstrapRefinementArtifact() -> selectBootstrapReviewSuggestion()/
+   decideBootstrapReviewEntry() -> prepareBootstrap()` chain in one pass. B4d is that one integration
+   proof -- confirming the seams actually fit as built, not merely that each stage is separately
+   correct against a fixture standing in for its neighbor.
+
+**Non-goals, explicit:**
+
+- No new decision/authority function. `decideBootstrapManifestEntry()`, `selectBootstrapReviewSuggestion()`,
+  `validateBootstrapManifestStructure()`, and `decideBootstrapReviewEntry()` are unchanged -- B4d adds a
+  read-only receipt *projection*, never a second way to decide or admit anything.
+- No new UI. Nothing in `BootstrapReviewWorkspace.tsx`, `StructuralReviewPanel.tsx`, or `StoryEditor.tsx`
+  changes.
+- No live Hermes call in tests. Matching B4a/B4b/B4c1's own established convention, the integration
+  proof uses a hand-built `BootstrapRefinementArtifact` fixture (same shape `buildArtifact()` helpers
+  in existing test files already produce) -- "real wired surfaces, not fresh mocks" means real
+  functions called in the real sequence, not a real network call to Hermes.
+- No manifest-level (whole-receipt) refinement summary field. Only named by any prior increment's
+  deferred note: the two *entry-level* fields. A `BootstrapReceipt`-level field echoing
+  `refinementMetadata` presence is a separate, undecided question -- flagged below, not assumed.
+
+**The mutual-exclusivity invariant B4d's projection can rely on, already enforced upstream:**
+`validateBootstrapManifestStructure()` already guarantees an entry never carries both
+`refinementProvenance` (this entry *is* an AI addition) and `selectedRefinementCandidateDigest` (this
+entry *selected* an AI suggestion) at once -- the iff rule for the latter requires
+`refinementProvenance === undefined`. So a `BootstrapReceiptEntry` row will show at most one of the two
+new fields, never both; `prepareBootstrap()` does not need to re-police this, only carry through
+whatever the already-validated manifest entry already (losslessly) has.
+
+**Schema change, narrow:**
+
+```ts
+export interface BootstrapReceiptEntry {
+  readonly entryId: string;
+  readonly kind: BootstrapProposalKind;
+  readonly decision: BootstrapManifestEntry['decision'];
+  readonly supportedForApplication: boolean;
+  readonly proposed: BootstrapProposal;
+  readonly admitted: BootstrapProposal | null;
+  readonly applied: boolean;
+  /** Present only when the entry itself originated as a B4 AI addition -- copied verbatim, never reconstructed. */
+  readonly refinementProvenance?: BootstrapRefinementProvenance;
+  /** Present only when the entry's admitted value was explicitly selected from an attached AI suggestion. */
+  readonly selectedRefinementCandidateDigest?: string;
+}
+```
+
+Populated inside `prepareBootstrap()`'s existing `receiptEntries` map (`prepareBootstrap.ts:568-576`)
+by copying `entry.refinementProvenance`/`entry.selectedRefinementCandidateDigest` straight through,
+conditionally (omit when absent, exactly like every other optional field already handled there) --
+never inferred, never recomputed. Decision outcome does not alter origin provenance. A rejected
+AI-added entry still carries `refinementProvenance` with `admitted: null` and `applied: false`. Pending
+entries never produce a receipt because admission remains blocked.
+
+**Explicitly deferred out of B4d** (named, not abandoned):
+
+- A `BootstrapReceipt`-level (not per-entry) field summarizing whether any refinement pass touched the
+  manifest at all. Nothing upstream has promised this; raise it only if a real downstream consumer
+  needs "was AI involved anywhere in this bootstrap" without walking every entry.
+- Any change to `fingerprintBootstrapAdmission()`/`entriesFingerprint`/manifest `id`. B4c3 already
+  settled that `selectedRefinementCandidateDigest` is pure review state excluded from both; the receipt
+  fingerprint is unaffected by this projection change for the same reason.
+
+**B4d RED gate (sketch -- not yet frozen):**
+
+1. a full pipeline run -- real `buildBootstrapManifest()`, a hand-built `BootstrapRefinementArtifact`
+   with one addition and one suggestion, real `mergeBootstrapRefinementArtifact()`, real
+   `selectBootstrapReviewSuggestion()` on the suggestion target, real `decideBootstrapReviewEntry()`
+   APPROVE on the addition and on an untouched B2 baseline entry, real `prepareBootstrap()` -- produces
+   a `BootstrapReceipt` whose three entries' rows carry exactly the expected shape: the addition's row
+   has `refinementProvenance` and no `selectedRefinementCandidateDigest`; the suggestion-target's row
+   has `selectedRefinementCandidateDigest` and no `refinementProvenance`; the untouched B2 entry's row
+   has neither;
+2. every existing `BootstrapReceiptEntry` field (`proposed`/`admitted`/`applied`/`decision`/etc.) is
+   byte-identical to what today's (pre-B4d) receipt would have produced for the same decided manifest --
+   proving this is a strictly additive projection, not a reshaped one;
+3. a rejected AI-added entry's receipt row still carries `refinementProvenance` (historical record of
+   origin) with `admitted: null`, `applied: false` -- refinement provenance describes origin, never
+   grants admission;
+4. a manifest with any entry still `'pending'` (AI-added or not) still makes `prepareBootstrap()` throw
+   exactly as before -- no new bypass introduced by this projection;
+5. `BootstrapReceipt.admissionFingerprint`/`.id` are unaffected by whether any entry carries the new
+   fields -- same two manifests differing only in selection provenance (already proven identical at the
+   manifest-fingerprint level by B4c3) still produce identical receipt identity;
+6. a manifest that never went through refinement at all (`refinementMetadata` absent, no entry carries
+   either new field) produces a receipt byte-identical to today's -- zero-refinement callers see no
+   change whatsoever;
+7. B4d makes no production UI-code changes: `BootstrapReviewWorkspace.tsx`, `StructuralReviewPanel.tsx`,
+   and `StoryEditor.tsx` remain byte-identical. The new receipt provenance is produced solely by the
+   existing `prepareBootstrap()` receipt projection; no new UI authority or receipt-consumption path is
+   introduced.
+
+**B4d contract: FROZEN.** Reflects the pending-entry provenance wording correction (a rejected
+AI-added entry still carries `refinementProvenance`; a pending entry never reaches receipt
+construction at all, since `prepareBootstrap()` throws before that point) and the corrected RED gate
+item 7 (no production UI-code changes, rather than a reachability claim `StoryEditor.tsx`'s existing
+`BootstrapReceipt` import would have made misleading). RED is written next.
 
 ## Post-B4 backlog — explicitly not part of B3c/B3d
 
