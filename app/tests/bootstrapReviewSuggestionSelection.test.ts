@@ -338,7 +338,7 @@ function withTamperedEntry(manifest: BootstrapManifest, entryId: string, patch: 
 }
 
 function testStructuralValidationRejectsEveryTamperedDigestState() {
-  const { combined, targetEntry, digestA } = combinedFixture();
+  const { combined, targetEntry, digestA, additionEntry } = combinedFixture();
   const selected = selectBootstrapReviewSuggestion(combined, noAssignments(), targetEntry.id, digestA);
   const validSelectedEntry = selected.manifest.entries.find((e) => e.id === targetEntry.id)!;
 
@@ -356,7 +356,6 @@ function testStructuralValidationRejectsEveryTamperedDigestState() {
   assert.throws(() => validateBootstrapManifestStructure(wrongDigest), /Malformed Bootstrap Manifest/i);
 
   // (c) digest present on an entry with refinementProvenance !== undefined (an AI-added entry).
-  const { additionEntry } = combinedFixture();
   const additionWithDigest = withTamperedEntry(combined, additionEntry.id, {
     decision: 'edited',
     admitted: additionEntry.proposed,
