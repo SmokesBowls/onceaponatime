@@ -1,6 +1,6 @@
 import React from 'react';
 import { Lock, X } from 'lucide-react';
-import type { BootstrapManifest, BootstrapProposal } from '../lib/bootstrapManifest';
+import type { BootstrapManifest, BootstrapProposal, BootstrapRefinementProvenance } from '../lib/bootstrapManifest';
 import { NARRATIVE_STRUCTURE_UNESTABLISHED_MESSAGE } from '../lib/compositionReadiness';
 
 interface StructuralReviewPanelProps {
@@ -70,8 +70,40 @@ const ProposalDetails: React.FC<{ proposal: BootstrapProposal }> = ({ proposal }
 };
 
 /**
+ * B4c2's one shared, read-only rendering of a candidate's refinement
+ * provenance -- used both for an AI-added entry's own provenance and for
+ * each suggestion's provenance. `heading` distinguishes the two per the
+ * frozen contract's exact label text ("AI refinement provenance" for an
+ * AI-added entry's own block, "Refinement provenance" -- no "AI" prefix --
+ * for a suggestion's), so the two read as distinguishable even in the
+ * (contract-forbidden, but not type-forbidden) case of an entry carrying
+ * both refinementProvenance and suggestedRefinements at once. Never a
+ * control: no click handler, no selection affordance. Renders only
+ * candidateDigest -- the manifest-level artifact/receipt record this
+ * candidate links back to is deliberately not duplicated here (see
+ * bootstrapManifest.ts's own provenance-ownership split: one exact record
+ * at the manifest level, digest linkage only here).
+ */
+const RefinementProvenanceDetail: React.FC<{ heading: string; provenance: BootstrapRefinementProvenance }> = ({ heading, provenance }) => (
+  <div className="space-y-1 rounded border border-[#3B5BA5]/25 bg-[#3B5BA5]/5 p-3">
+    <div className="font-sans text-[10px] font-bold uppercase tracking-wider text-[#3B5BA5]">
+      {heading}
+    </div>
+    <div data-candidate-digest={provenance.candidateDigest} className="break-all font-mono text-[10px] text-[#5A554E]">
+      Candidate digest: {provenance.candidateDigest}
+    </div>
+  </div>
+);
+
+/**
  * Read-only B3b presentation of an existing BootstrapManifest snapshot.
  * Decisions, assignments, and canonical admission belong to later slices.
+ *
+ * B4c2 extension: purely a projection of entry.refinementProvenance /
+ * entry.suggestedRefinements, both already on BootstrapManifestEntry --
+ * this component never selects, applies, or mutates a suggestion, never
+ * adds a control, and never touches readiness. A deterministic entry with
+ * neither field renders exactly as it always has.
  */
 export const StructuralReviewPanel: React.FC<StructuralReviewPanelProps> = ({ manifest, onClose }) => (
   <section
@@ -111,10 +143,12 @@ export const StructuralReviewPanel: React.FC<StructuralReviewPanelProps> = ({ ma
         const workingLabel = 'working_label' in entry.proposed
           ? entry.proposed.working_label
           : null;
+        const isAiAdded = entry.refinementProvenance !== undefined;
         return (
           <article
             key={entry.id}
             data-bootstrap-entry-id={entry.id}
+            {...(isAiAdded ? { 'data-refinement-origin': 'ai-added' } : {})}
             className="space-y-3 rounded border border-[#1A1A1A]/15 bg-[#FAF8F2] p-4"
           >
             <div className="flex flex-wrap items-baseline justify-between gap-2">
@@ -124,16 +158,28 @@ export const StructuralReviewPanel: React.FC<StructuralReviewPanelProps> = ({ ma
                   <h5 className="font-serif text-base italic text-[#1A1A1A]">{workingLabel}</h5>
                 )}
               </div>
-              <span className="rounded bg-[#E5E2D9] px-2 py-1 font-sans text-[9px] font-bold uppercase tracking-wider text-[#5A554E]">
-                Pending author review
-              </span>
+              <div className="flex items-center gap-1.5">
+                {isAiAdded && (
+                  <span className="rounded bg-[#3B5BA5]/15 px-2 py-1 font-sans text-[9px] font-bold uppercase tracking-wider text-[#3B5BA5]">
+                    AI-added
+                  </span>
+                )}
+                <span className="rounded bg-[#E5E2D9] px-2 py-1 font-sans text-[9px] font-bold uppercase tracking-wider text-[#5A554E]">
+                  Pending author review
+                </span>
+              </div>
             </div>
 
+            {isAiAdded && (
+              <div className="font-sans text-[10px] font-bold uppercase tracking-wider text-[#736B63]">
+                AI proposal
+              </div>
+            )}
             <ProposalDetails proposal={entry.proposed} />
 
             <div className="space-y-2">
               <div className="font-sans text-[10px] font-bold uppercase tracking-wider text-[#736B63]">
-                Exact source evidence
+                {isAiAdded ? 'AI supporting evidence' : 'Exact source evidence'}
               </div>
               {entry.evidence.map((evidence, evidenceIndex) => (
                 <div
@@ -156,7 +202,9 @@ export const StructuralReviewPanel: React.FC<StructuralReviewPanelProps> = ({ ma
               ))}
             </div>
 
-            {entry.discoveryConfidence === undefined ? (
+            {isAiAdded ? (
+              <RefinementProvenanceDetail heading="AI refinement provenance" provenance={entry.refinementProvenance!} />
+            ) : entry.discoveryConfidence === undefined ? (
               <p className="font-serif text-xs italic text-[#736B63]">Discovery rationale not supplied</p>
             ) : (
               <div className="space-y-2 rounded border border-[#1A1A1A]/10 bg-[#E5E2D9]/45 p-3">
@@ -176,6 +224,55 @@ export const StructuralReviewPanel: React.FC<StructuralReviewPanelProps> = ({ ma
                     <li key={reason} data-discovery-reason-id={reason}>{reason}</li>
                   ))}
                 </ul>
+              </div>
+            )}
+
+            {entry.suggestedRefinements !== undefined && entry.suggestedRefinements.length > 0 && (
+              <div
+                data-suggested-refinements-for={entry.id}
+                className="space-y-3 rounded border border-[#3B5BA5]/30 bg-[#3B5BA5]/5 p-3"
+              >
+                <div className="font-sans text-[10px] font-bold uppercase tracking-wider text-[#3B5BA5]">
+                  AI suggestions
+                </div>
+                {entry.suggestedRefinements.map((suggestion, suggestionIndex) => (
+                  <div
+                    key={`${suggestion.provenance.candidateDigest}:${suggestionIndex}`}
+                    className="space-y-2 rounded border border-[#3B5BA5]/20 bg-white p-3"
+                  >
+                    <div className="font-sans text-[10px] font-bold uppercase tracking-wider text-[#736B63]">
+                      Suggested values
+                    </div>
+                    <ProposalDetails proposal={suggestion.suggested} />
+
+                    <div className="space-y-2">
+                      <div className="font-sans text-[10px] font-bold uppercase tracking-wider text-[#736B63]">
+                        AI supporting evidence
+                      </div>
+                      {suggestion.evidence.map((evidence, evidenceIndex) => (
+                        <div
+                          key={`${evidence.unitId}:${evidenceIndex}`}
+                          data-source-document-id={evidence.sourceDocumentId}
+                          data-suggestion-evidence-unit-id={evidence.unitId}
+                          data-start-offset={evidence.startOffset}
+                          data-end-offset={evidence.endOffset}
+                          className="space-y-2 rounded border border-[#1A1A1A]/15 bg-[#FAF8F2] p-3"
+                        >
+                          <div className="flex flex-wrap gap-x-3 gap-y-1 font-mono text-[9px] text-[#736B63]">
+                            <span>Source document: {evidence.sourceDocumentId}</span>
+                            <span>Evidence unit: {evidence.unitId}</span>
+                            <span>Span: [{evidence.startOffset}, {evidence.endOffset})</span>
+                          </div>
+                          <p className="whitespace-pre-wrap font-serif text-sm leading-relaxed text-[#1A1A1A]">
+                            {evidence.exactText}
+                          </p>
+                        </div>
+                      ))}
+                    </div>
+
+                    <RefinementProvenanceDetail heading="Refinement provenance" provenance={suggestion.provenance} />
+                  </div>
+                ))}
               </div>
             )}
           </article>
