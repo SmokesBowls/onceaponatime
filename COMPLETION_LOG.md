@@ -456,7 +456,38 @@ assume its caller handed it a valid manifest.
   the app's current reachable UI, closed for consistency ahead of B4c2 adding more surface area.
 - Verified: full `npm test`, `tsc --noEmit`, production build, and `git diff --check` all pass.
 
-**Committed at `fbf06ec`; not yet pushed to `origin/main`.**
+**Pushed to `origin/main`** (at `fbf06ec`).
 
-**Not yet done:** B4c2 (render AI additions/suggestions), B4c3 (suggestion selection, undesigned), B4d
-(End-to-End Authority Proof). See `TODO.md`.
+## B4b hardening -- suggestion-evidence preservation
+
+Found while inspecting the real manifest shape B4c2 (rendering) would need to consume, before
+drafting that contract: `BootstrapSuggestedRefinement` carried only `suggested`/`provenance` -- no
+`evidence` field -- even though `mergeBootstrapRefinementArtifact()` already computes the correct,
+re-validated `SourceEvidenceUnit[]` for every candidate, additions and suggestions alike. An
+addition's own entry kept its copy; a suggestion's construction silently dropped it. "Suggestion
+evidence is rendered separately from baseline evidence" was unsatisfiable by any UI as a result.
+Closed as its own small slice before B4c2's contract, mirroring the B4a hardening precedent
+(`71c5aed`/`b24d806`) rather than folded into B4c2's presentation work.
+
+- RED (`288d5d1`): `tests/bootstrapRefinementMergeSuggestionEvidence.test.ts`, genuinely red at both
+  runtime and type-check (10 "Property 'evidence' does not exist" errors). Covers evidence surviving
+  the merge exactly; the target entry's own evidence staying byte-for-byte unchanged; suggestion
+  evidence staying structurally separate from baseline evidence even citing an identical span;
+  tampered suggestion evidence failing structural validation; a changed suggestion evidence span
+  changing manifest identity; additions' existing evidence behavior unchanged; and input immutability.
+- GREEN (`c50ce9e`): adds the `evidence` field; extracts a shared `assertValidEvidence()` helper
+  (verbatim logic, not weakened) applied to both entry-level and suggestion-level evidence;
+  extends `fingerprintEntrySources()`'s suggestion projection to include it; and carries the
+  already-computed, already-validated evidence forward in both places
+  `bootstrapRefinementMerge.ts` constructs a suggestion -- no new extraction, no new derivation.
+- A fresh, independent adversarial review traced the multi-candidate/multi-suggestion wiring by hand
+  and found no possible evidence/proposal cross-contamination, confirmed the fingerprinting change
+  doesn't reintroduce the circular-dependency bug `refinesBaselineEntryId`'s exclusion was built to
+  avoid, and confirmed no new derivation logic anywhere. No findings.
+- Verified: full `npm test`, `tsc --noEmit`, production build, and `git diff --check` all pass.
+
+**Committed at `c50ce9e`; not yet pushed to `origin/main`.**
+
+**Not yet done:** B4c2 (render AI additions/suggestions -- contract draft exists, awaiting re-check
+against this now-complete manifest shape before freezing), B4c3 (suggestion selection, undesigned),
+B4d (End-to-End Authority Proof). See `TODO.md`.

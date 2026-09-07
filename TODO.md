@@ -20,7 +20,7 @@ B3c — Author Decisions + Explicit Assignments  ✅ done, pushed (1a93177)
         ↓
 B3d — Atomic Canonical Admission  ✅ done, not yet pushed (14d86e2)
         ↓
-B4 — Optional AI Refinement  ← split into B4a/B4b/B4c/B4d; B4a ✅ done, pushed (ded2db7); B4a hardening ✅ done, pushed (3ab5357); B4b ✅ done, pushed (de787b0); B4c1 ✅ done, not yet pushed (fbf06ec); B4c2/B4c3/B4d not started
+B4 — Optional AI Refinement  ← split into B4a/B4b/B4c/B4d; B4a ✅ done, pushed (ded2db7); B4a hardening ✅ done, pushed (3ab5357); B4b ✅ done, pushed (de787b0); B4c1 ✅ done, pushed (fbf06ec); B4b suggestion-evidence hardening ✅ done, not yet pushed (c50ce9e); B4c2 draft written, awaiting re-check; B4c3/B4d not started
 ```
 
 ### B2 — Deterministic Bootstrap Discovery ✅ shipped
@@ -1808,6 +1808,174 @@ B4c1 is reviewed and frozen. Per the established pattern, RED and GREEN remain s
 from this freeze: no B4c1 production implementation is authorized by this contract alone. B4c2 remains
 scoped above only at the paragraph level (not yet narrowed into exact files/props) and B4c3 remains
 explicitly undesigned -- neither is unblocked by this freeze.
+
+
+##### B4c2 — render AI additions/suggestions in review  ← DRAFT, not yet reviewed or frozen
+
+Drafted after reading `StructuralReviewPanel.tsx` in full (it is the only thing that renders
+per-entry proposal/evidence/discovery-rationale detail today, and is used from exactly one place --
+`BootstrapReviewWorkspace.tsx` -- so it is the natural, already-consistent home for this slice's
+rendering, not a new component) and `BootstrapReviewWorkspace.tsx` (already receives the full
+combined `manifest` whenever B4c1 has run; needs no new prop threaded through for B4c2 to have
+everything it needs).
+
+**A real prerequisite gap found by this inspection, not a B4c2 authority question.** `BootstrapSuggestedRefinement` (`src/lib/bootstrapManifest.ts`) carries only `suggested` and
+`provenance` (`candidateDigest`/`refinesBaselineEntryId`) -- **no evidence field.**
+`bootstrapRefinementMerge.ts`'s merge already re-validates and computes the correct
+`SourceEvidenceUnit[]` for *every* candidate, additions and suggestions alike (the `revalidated`
+array), and an addition's own entry keeps its copy (`evidence: source.evidence`) -- but a
+suggestion's construction only carries `suggested`/`provenance` forward, silently dropping the
+already-computed, already-validated evidence. This is not a hypothetical gap: it means "suggestion
+evidence is rendered separately from baseline evidence" is currently unsatisfiable by any UI, because
+the data does not survive into the manifest at all for suggestions.
+
+This must be closed as its own tiny slice before B4c2 RED, mirroring the B4a-hardening precedent
+(`71c5aed`/`b24d806`) rather than folded silently into B4c2's own commit:
+
+```text
+B4b hardening -- suggestion evidence  (RED + GREEN, own commit, before B4c2 RED)
+
+BootstrapSuggestedRefinement gains:
+  readonly evidence: readonly SourceEvidenceUnit[]
+
+bootstrapRefinementMerge.ts's suggestion construction includes the already-computed
+revalidated evidence for that candidate (no new re-validation logic -- the data already
+exists, it is only not being attached)
+
+validateBootstrapManifestStructure() validates suggestion.evidence with the same per-unit
+rules already applied to entry-level evidence (bound document, exact offset/text match)
+
+fingerprintEntrySources()'s suggestion projection includes evidence alongside
+suggested/candidateDigest (still excluding refinesBaselineEntryId, per the existing
+circular-dependency reasoning) -- a changed suggestion evidence span must change manifest
+identity, matching "all provenance participates in manifest fingerprinting"
+```
+
+Small, mechanical, and entirely internal to already-shipped B4b machinery -- no change to B4a, no
+change to the B4c1 surfaces, no new authority. B4c2's own contract below assumes this has already
+landed; its RED gate cannot be frozen until it has.
+
+**Scope.** Presentation only, on the existing, already-wired `BootstrapReviewWorkspace.tsx` /
+`StructuralReviewPanel.tsx` surfaces. No new authority, no new decision path, no props threaded in
+from `StoryEditor.tsx` (everything B4c2 needs is already reachable through the `manifest` prop
+`StructuralReviewPanel` already receives).
+
+```text
+B4c2 MAY:
+- visibly mark an entry as AI-added (refinementProvenance present, no discoveryConfidence)
+- visibly mark a deterministic entry as having one or more AI suggestions attached
+- render each suggestion's proposed working label / name / aliases / description / evidence
+- render refinement provenance (candidateDigest; the manifest-level artifact/receipt summary,
+  read-only) beside the entries/suggestions it belongs to
+- keep every existing B3 decision control (APPROVE/EDIT/REJECT, assignment selects) operating
+  on the real BootstrapManifestEntry exactly as it does today
+
+B4c2 MAY NOT:
+- render any control that selects, applies, or previews-as-chosen a suggestion
+- mutate proposed/admitted/decision/evidence/discoveryConfidence on any entry
+- invent a new decision value or a second decision vocabulary
+- auto-copy any suggested field into proposed or admitted
+- rank, sort-by-preference, or deduplicate suggestions
+- hide, dim, or visually subordinate the original deterministic proposal beneath a suggestion
+- merge/collapse AI evidence into the same list as B2 discovery evidence -- rendered in a
+  visibly separate block, never interleaved
+- change assessBootstrapReviewReadiness()/isBootstrapReviewComplete() semantics, or any input
+  to them -- rendering additional detail is not a readiness input
+```
+
+**Structure, exactly as the author specified -- made explicit so the RED gate can pin it down:**
+
+```text
+DETERMINISTIC ENTRY (entry.refinementProvenance absent)
+  original B2 proposed proposal            (ProposalDetails, unchanged)
+  original exact evidence                  (existing "Exact source evidence" block, unchanged)
+  original discoveryConfidence              (existing block, unchanged, still absent-safe)
+
+  AI SUGGESTIONS (entry.suggestedRefinements, only if present)
+    for each suggestion:
+      suggested proposal fields             (ProposalDetails reused on suggestion.suggested)
+      suggestion evidence                   (own block, visibly separate from the entry's own
+                                              "Exact source evidence" above -- never the same list)
+      candidate provenance                  (candidateDigest, read-only)
+
+AI-ADDED ENTRY (entry.refinementProvenance present)
+  proposed proposal                         (ProposalDetails, unchanged component)
+  its own evidence                          (existing evidence block, unchanged component --
+                                              already renders whatever entry.evidence holds)
+  refinementProvenance                      (candidateDigest, read-only -- replaces the
+                                              existing "Discovery rationale not supplied"
+                                              fallback text, which would otherwise misleadingly
+                                              imply this entry is a B2 entry B2 just didn't
+                                              explain)
+  no discoveryConfidence block               (never fabricated; entry.discoveryConfidence is
+                                              simply absent on every AI addition already, per
+                                              B4b's own frozen guarantee)
+```
+
+**Files.**
+
+- `src/components/StructuralReviewPanel.tsx` -- extended, not replaced. Per entry: if
+  `entry.refinementProvenance !== undefined`, render an "AI-added" marker beside the existing
+  kind/working-label header and replace the "Discovery rationale not supplied" fallback with a
+  read-only refinement-provenance block (`candidateDigest`) -- the existing evidence block already
+  renders `entry.evidence` correctly with no change needed. If `entry.suggestedRefinements !==
+  undefined`, render an "AI suggestions" section after the entry's own evidence/discoveryConfidence
+  block, one sub-block per suggestion, reusing the existing `ProposalDetails` component on
+  `suggestion.suggested` and a new evidence-rendering block (visually matching but markup-distinct
+  from -- `data-` attributes distinguishing suggestion evidence from baseline evidence) the existing
+  one, fed from `suggestion.evidence` (present once the B4b hardening slice above lands) plus
+  `suggestion.provenance.candidateDigest`.
+- No change to `BootstrapReviewWorkspace.tsx`'s props, decision handlers, or control wiring --
+  APPROVE/EDIT/REJECT and the assignment selects continue to operate on `entry.id`/`entry.proposed`
+  exactly as today; nothing about a suggestion is selectable through them.
+- No change to `bootstrapReview.ts` -- `assessBootstrapReviewReadiness()`/
+  `isBootstrapReviewComplete()`/`decideBootstrapReviewEntry()` take the same inputs and produce the
+  same outputs regardless of whether an entry carries `suggestedRefinements` or
+  `refinementProvenance`.
+
+**Pre-existing, out-of-scope observation from this inspection (not a B4c2 concern):**
+`StructuralReviewPanel.tsx`'s per-entry status badge is a hardcoded literal `"Pending author review"`
+string, not derived from `entry.decision` -- `BootstrapReviewWorkspace.tsx` already renders the real,
+decision-derived badge above it via `DECISION_LABEL[entry.decision]`, so the two badges can disagree
+once an entry is actually decided. Predates B4 entirely (B3b/B3c). Not touched here; recorded in
+TODO.md's deferred-findings section if this draft is frozen, not silently fixed as a drive-by.
+
+**B4c2 RED gate (draft -- not yet frozen; cannot freeze until the B4b evidence prerequisite lands):**
+
+1. an AI-added entry (`refinementProvenance` present) is visibly, structurally distinguishable from a
+   B2 entry (a distinct marker/attribute, not merely absent text an author could miss);
+2. an AI-added entry never renders a `discoveryConfidence` block, fabricated or otherwise;
+3. a deterministic entry's own `proposed`/`evidence`/`discoveryConfidence` render unchanged,
+   byte-identical to pre-B4c2 output, whether or not it has suggestions attached;
+4. `suggestedRefinements` render nested beneath/alongside their exact target entry, never as
+   sibling top-level entries and never attached to the wrong entry;
+5. suggestion evidence renders in a block markup-distinguishable from the entry's own baseline
+   evidence block -- never the same list, never interleaved, even when spans are identical text;
+6. suggestion provenance (`candidateDigest`) renders, read-only -- no interactive control anywhere
+   near it;
+7. rendering a suggestion never calls `onDecide`/mutates `proposed`/`admitted`/`decision` -- a static
+   source scan confirms no suggestion-rendering code path references `onDecide`;
+8. existing APPROVE/EDIT/REJECT clicks on an entry that has suggestions attached still decide the
+   *entry*, with the *entry's own* `proposed` value, exactly as `tests/bootstrapRefineLifecycle
+   .test.tsx`'s existing decision tests already prove for entries without suggestions -- suggestions
+   present must not change what EDIT's SAVE writes;
+9. a combined manifest with zero AI additions and zero suggestions on every entry renders
+   byte-identical output to the pre-B4c2 component (a snapshot/string-equality check against the
+   existing B3b/B3c presentation tests' fixtures);
+10. `assessBootstrapReviewReadiness()`/`isBootstrapReviewComplete()` results are unchanged by the
+    mere presence of `refinementProvenance`/`suggestedRefinements` on entries that are otherwise
+    identical -- readiness depends only on decision/assignment state, never on rendering detail;
+11. static reachable-import-graph confirmation that `StructuralReviewPanel.tsx` imports nothing new
+    from B4a (`bootstrapRefinement.ts`) or B4b's orchestration (`bootstrapRefinementMerge.ts`) --
+    only the `BootstrapManifest`/`BootstrapSuggestedRefinement`/`BootstrapRefinementProvenance` types
+    it already has reachable via `bootstrapManifest.ts`.
+
+**Non-goals (B4c2):** everything B4c3 owns (suggestion selection, `selectedRefinementCandidateDigest`,
+any new decision path) remains untouched and undesigned; no manifest schema change beyond the B4b
+evidence-field prerequisite above; no `StoryProject` mutation; no change to `StoryEditor.tsx`.
+
+This draft is not yet frozen -- awaiting review, and blocked on the B4b evidence prerequisite landing
+first.
 
 ## Post-B4 backlog — explicitly not part of B3c/B3d
 
