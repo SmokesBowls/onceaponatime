@@ -891,6 +891,7 @@ export function validateBootstrapManifestStructure(manifest: BootstrapManifest):
       if (!Array.isArray(entry.suggestedRefinements) || entry.suggestedRefinements.length === 0) {
         throw new Error(`Malformed Bootstrap Manifest suggestedRefinements on entry ${entry.id}`);
       }
+      const seenCandidateDigests = new Set<string>();
       for (const suggestion of entry.suggestedRefinements) {
         if (!isRecord(suggestion) || !isProposalForKind(entry.kind, suggestion.suggested)) {
           throw new Error(`Malformed Bootstrap Manifest suggestedRefinement on entry ${entry.id}`);
@@ -904,6 +905,17 @@ export function validateBootstrapManifestStructure(manifest: BootstrapManifest):
         ) {
           throw new Error(`Malformed Bootstrap Manifest suggestedRefinement provenance on entry ${entry.id}`);
         }
+        // B4c3: a duplicated candidateDigest within one entry's own
+        // suggestedRefinements is malformed regardless of whether anything
+        // is currently selected -- B4a/B4b's real pipeline never produces
+        // one (candidateDigest is a server-computed content hash, never
+        // LLM-supplied), so this can only arise from a hand-tampered
+        // manifest; caught here, unconditionally, rather than only when a
+        // selectedRefinementCandidateDigest happens to be present.
+        if (seenCandidateDigests.has(provenance.candidateDigest)) {
+          throw new Error(`Malformed Bootstrap Manifest: entry ${entry.id} carries a duplicated suggestion candidateDigest`);
+        }
+        seenCandidateDigests.add(provenance.candidateDigest);
       }
     }
     if (!['pending', 'approved', 'edited', 'rejected'].includes(entry.decision)) {

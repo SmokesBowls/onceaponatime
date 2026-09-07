@@ -387,11 +387,21 @@ function testSelectionOnAiAddedEntryRejectsEverywhere() {
   // would, so the rejection can only come from the refinementProvenance
   // guard, not from some unrelated malformation.
   const borrowedSuggestion = targetEntry.suggestedRefinements![0];
-  // Kind-matched to additionEntry (not borrowedSuggestion's original kind) on
-  // every use below -- otherwise the pre-existing, unrelated kind-mismatch
-  // check would trip first and the assertions would no longer prove the
-  // refinementProvenance guard specifically.
-  const kindMatchedSuggested = { ...borrowedSuggestion.suggested, kind: additionEntry.kind } as BootstrapProposal;
+  // Kind-matched AND id-matched to additionEntry (not borrowedSuggestion's
+  // original kind/id) on every use below -- otherwise either the pre-existing
+  // kind-mismatch check (decideBootstrapManifestEntry/validateBootstrapManifestStructure)
+  // or selectBootstrapReviewSuggestion()'s own separate suggestion-id-matches-
+  // entry's-proposed-id defense-in-depth check would trip first, and the
+  // assertions would no longer prove the refinementProvenance guard
+  // specifically (a real gap an independent adversarial review caught: the
+  // id mismatch alone was enough to mask the guard in
+  // selectBootstrapReviewSuggestion(), confirmed by deleting the guard and
+  // observing this test still passed).
+  const kindMatchedSuggested = {
+    ...borrowedSuggestion.suggested,
+    kind: additionEntry.kind,
+    ...('id' in additionEntry.proposed ? { id: additionEntry.proposed.id } : {}),
+  } as BootstrapProposal;
   const handBuilt = withTamperedEntry(combined, additionEntry.id, {
     suggestedRefinements: [{
       ...borrowedSuggestion,
@@ -442,6 +452,18 @@ function testDuplicateDigestOnSameEntryFailsClosed() {
   assert.throws(
     () => selectBootstrapReviewSuggestion(duplicated, noAssignments(), targetEntry.id, digestA),
     'selecting a digest that matches two attached suggestions must fail closed, never silently resolve to the first',
+  );
+
+  // The duplicated digest is malformed on its own, independent of whether
+  // anything is currently selected -- validateBootstrapManifestStructure()
+  // must reject it even on this still-unselected (decision: 'pending')
+  // manifest, not merely when a selectedRefinementCandidateDigest happens
+  // to be present to trigger the check.
+  assert.equal(duplicated.entries.find((e) => e.id === targetEntry.id)!.decision, 'pending', 'fixture sanity: unselected');
+  assert.throws(
+    () => validateBootstrapManifestStructure(duplicated),
+    /Malformed Bootstrap Manifest/i,
+    'a duplicated suggestion candidateDigest must be rejected unconditionally, not only when selected',
   );
 }
 
