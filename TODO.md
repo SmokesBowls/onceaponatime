@@ -20,7 +20,7 @@ B3c — Author Decisions + Explicit Assignments  ✅ done, pushed (1a93177)
         ↓
 B3d — Atomic Canonical Admission  ✅ done, not yet pushed (14d86e2)
         ↓
-B4 — Optional AI Refinement  ← split into B4a/B4b/B4c/B4d; B4a ✅ done, pushed (ded2db7); B4a hardening ✅ done, pushed (3ab5357); B4b ✅ done, pushed (de787b0); B4c1 ✅ done, pushed (fbf06ec); B4b suggestion-evidence hardening ✅ done, pushed (c50ce9e); B4c2 ✅ done, not yet pushed (2ac1c7f); B4c3/B4d not started
+B4 — Optional AI Refinement  ← split into B4a/B4b/B4c/B4d; B4a ✅ done, pushed (ded2db7); B4a hardening ✅ done, pushed (3ab5357); B4b ✅ done, pushed (de787b0); B4c1 ✅ done, pushed (fbf06ec); B4b suggestion-evidence hardening ✅ done, pushed (c50ce9e); B4c2 ✅ done, pushed (2ac1c7f); B4c3 contract frozen, RED not yet written; B4d not started
 ```
 
 ### B2 — Deterministic Bootstrap Discovery ✅ shipped
@@ -1974,6 +1974,329 @@ change to `StoryEditor.tsx`; the pre-existing `"Pending author review"` badge qu
 B4c2 is reviewed and frozen. Per the established pattern, RED and GREEN remain separate checkpoints
 from this freeze: no B4c2 production implementation is authorized by this contract alone. B4c3
 remains explicitly undesigned -- not unblocked by this freeze.
+
+
+##### B4c3 — explicit author selection of a suggested edit  ← contract frozen; awaiting RED
+
+Drafted after inspecting the exact current surfaces (not the master B4 draft's speculative prose):
+`BootstrapDecision`, `decideBootstrapManifestEntry()`, `decideBootstrapReviewEntry()`,
+`BootstrapManifestEntry`/`BootstrapSuggestedRefinement`/`refinementProvenance`/`suggestedRefinements`,
+`prepareBootstrap()`, `resolveAdmittedBootstrapProposal()`, `BootstrapReceipt`/`BootstrapReceiptEntry`,
+`fingerprintBootstrapAdmission()`/`fingerprintEntrySources()`/`entriesFingerprint`, and
+`BootstrapReviewWorkspace.tsx`'s manual EDIT lifecycle (`beginEdit`/`editingEntryId`/`editLabel`/
+`saveEdit`/`uniqueEditedId`). Full findings recorded in this session's own transcript; the load-
+bearing ones are restated below where they justify a specific design choice.
+
+**The mechanism holds.** `decision = 'edited'`, `admitted = suggestion.suggested`, plus one new,
+orthogonal `selectedRefinementCandidateDigest` field, requires zero changes to
+`resolveAdmittedBootstrapProposal()`, `prepareBootstrap()`, or `decideBootstrapReviewEntry()`'s
+assignment-clearing logic -- all three already handle `'edited'` + `admitted` generically, with no
+awareness of where the admitted value came from. Two facts make this cleaner than manual EDIT, not
+harder:
+
+- `suggestion.suggested.id` already equals its target entry's own current `proposed.id` --
+  `bootstrapRefinementMerge.ts` builds it via `buildProposalFromCandidate(candidate,
+  requireEntityProposalId(targetOriginal.proposed))`. Selecting a suggestion needs none of
+  `BootstrapReviewWorkspace.tsx`'s `uniqueEditedId()` collision-avoidance -- that exists only because
+  manual EDIT mints a fresh id from a typed label; a suggestion never does.
+- A suggestion can only ever target a genuine B2 baseline entry, never an AI-added one -- B4a
+  validates `refines_entry_id` against the pre-merge baseline, before AI-added entries exist. No
+  ambiguity about mixing AI-addition-ness with being a suggestion target.
+
+**Authority semantics, settled:**
+
+```text
+USE THIS SUGGESTION is itself the author decision (commits immediately -- no staging in the
+existing manual-edit form's local state):
+
+  decision = 'edited'
+  admitted = suggestion.suggested                          (verbatim, not reconstructed)
+  selectedRefinementCandidateDigest = suggestion.provenance.candidateDigest
+
+selectedRefinementCandidateDigest means:
+  "The currently admitted proposal is exactly the AI suggestion identified by this digest."
+It does NOT mean:
+  "This proposal was historically inspired by this suggestion."
+
+Describes current state, never lineage:
+  select suggestion A          -> digest = A
+  select suggestion B          -> digest = B  (replaces A, not layered on top of it)
+  select suggestion, then
+    manually edit the result   -> digest cleared (an ordinary author edit now, even if the
+                                   suggestion inspired it -- exact-selection provenance does not
+                                   survive the admitted value changing)
+  select suggestion, then
+    REJECT                     -> digest cleared
+  select suggestion, then
+    APPROVE                    -> existing semantics restore the original proposed value
+                                   (the pre-existing, already-documented "re-approve reverts to
+                                   proposed" quirk -- deliberately left alone in this slice, not
+                                   fixed as a drive-by); digest cleared
+
+Siblings always stay visible; nothing is hidden or removed when one is chosen:
+
+  AI suggestions
+    [A] suggested values ...
+        USE THIS SUGGESTION
+    [B] suggested values ...
+        SELECTED (checkmark)
+    [C] suggested values ...
+        USE THIS SUGGESTION
+
+The "selected" marker is derived solely from data already on the manifest, never separate
+React state:
+
+  entry.selectedRefinementCandidateDigest === suggestion.provenance.candidateDigest
+
+  -- so close/reopen/re-render can never drift from what the manifest actually says.
+
+Resolution is exact-entry-scoped only, enforced structurally, not by caller discipline:
+
+  entry.id -> require entry.refinementProvenance === undefined (fail closed on an AI-added
+    entry, even a hand-tampered one carrying suggestedRefinements)
+  -> entry.suggestedRefinements -> exactly one match on candidateDigest (fail closed on zero
+    matches or on two-or-more sharing a digest, never "take the first")
+  -> that one suggestion.suggested
+
+  Never: a digest supplied independently from the UI and searched for globally; label
+  matching; fuzzy matching; an arbitrary digest/proposal pairing the caller assembled itself.
+```
+
+**Identity/fingerprinting, settled:**
+
+```text
+BootstrapManifest identity (id / entriesFingerprint)
+  = build/merge-time structural identity
+  = proposal/evidence/refinement-content identity (kind, sourceIndex, proposed, evidence,
+    discoveryConfidence, refinementProvenance, suggestedRefinements -- fixed once at
+    build/merge time, never recomputed by decideBootstrapManifestEntry())
+
+decision / admitted / selectedRefinementCandidateDigest
+  = review-state fields
+  = NOT inputs to entriesFingerprint or the manifest's own id
+
+fingerprintBootstrapAdmission() (-> BootstrapReceipt.admissionFingerprint/.id)
+  = admitted canonical outcome (entryId/decision/admitted, for edited entries)
+  = also does NOT include selectedRefinementCandidateDigest -- two paths that admit the
+    exact same canonical proposal (a hand-typed edit that happens to match a suggestion's
+    values, and an exact suggestion selection) produce the same canonical admission
+    identity; the *how* is provenance, not admitted truth
+```
+
+The `entriesFingerprint` exclusion is a hard technical constraint, not a preference:
+`decideBootstrapManifestEntry()` spreads the *original* `id`/`entriesFingerprint` through
+unchanged and only ever replaces `entries` -- if a decision-time field fed into that hash, the
+very first decision made after a manifest is built would leave it self-inconsistent
+(`validateBootstrapManifestStructure()` recomputes `entriesFingerprint` from the *current*
+entries and compares it against the *stored*, now-stale value, and would reject the manifest
+outright). `selectedRefinementCandidateDigest` is decision-state, exactly like `admitted` and
+`decision` themselves, both of which already live outside `entriesFingerprint` for precisely
+this reason.
+
+The manifest carries selection provenance as explicit review state, but neither existing
+fingerprint incorporates it. No new `reviewStateFingerprint` is introduced in B4c3 -- there is no
+demonstrated need for one; B4d can preserve the selection provenance in the receipt without
+creating a third identity system.
+
+**Placement, settled: `StructuralReviewPanel.tsx` stays permanently read-only.** That invariant has
+already paid for itself -- B3b established it as the evidence/detail renderer, B4c2 strengthened it
+as strictly projection-only. B4c3 does not punch a decision-authority hole through it just because
+suggestion detail happens to live there.
+
+```text
+BootstrapReviewWorkspace.tsx owns:
+  APPROVE, EDIT, REJECT               (existing, unchanged)
+  USE THIS SUGGESTION / SELECTED      (new -- one compact row per suggestion, in its own
+                                        per-entry block, mirroring how it already owns every
+                                        other decision control)
+
+StructuralReviewPanel.tsx owns:
+  full suggestion proposal / evidence / provenance   (existing B4c2 rendering, unchanged)
+  zero authority                                     (its frozen RED gate -- no onDecide
+                                                       reference -- continues to hold, untouched)
+```
+
+This means the compact action and the richer evidence view render in two different places,
+correlated by working label and a short digest prefix shown in both:
+
+```text
+AI suggestions
+
+Ironspire Keep
+digest 8f31a2c4…
+[ USE THIS SUGGESTION ]
+
+Falcon Ridge
+digest a94271de…
+[ SELECTED ]
+```
+
+-- the full proposal/evidence for each stays exactly where B4c2 already put it, in
+`StructuralReviewPanel.tsx`, below. That is a deliberate, accepted seam, not an oversight -- the
+component boundary is worth more than one shared view. If the split feels genuinely bad once built,
+a later refactor can extract a shared read-only `SuggestionSummary`/`SuggestionDetails` child either
+component renders -- `StructuralReviewPanel.tsx` still never gains a callback.
+
+**Files.**
+
+- `src/lib/bootstrapManifest.ts` -- `BootstrapManifestEntry` gains
+  `readonly selectedRefinementCandidateDigest?: string`, valid **iff**:
+  ```text
+  decision === 'edited'
+  AND entry.refinementProvenance === undefined
+  AND exactly one attached suggestion has that digest
+  AND admitted deep-equals that suggestion.suggested
+  ```
+  The `refinementProvenance === undefined` clause enforces, at B4c3's own authority boundary rather
+  than merely inheriting it from upstream construction, that a suggestion can only ever be selected
+  against a genuine deterministic/B2 baseline entry -- never an AI-added entry, even a hand-tampered
+  one that has had `suggestedRefinements` manually attached to it. The "exactly one" clause is
+  enforced by counting matches (`entry.suggestedRefinements.filter(s => s.provenance.candidateDigest
+  === candidateDigest).length === 1`), not by taking the first match -- a manifest with two attached
+  suggestions sharing a digest fails closed rather than silently resolving to whichever happens to
+  be first. Every transition away from that exact state clears the field.
+  `decideBootstrapManifestEntry()` gains a new optional parameter of the same name. When supplied, it
+  is valid only for `decision === 'edited'` (mirroring `admitted`'s existing constraint exactly --
+  supplying it for any other decision throws); the function verifies the target entry has
+  `refinementProvenance === undefined`, that the digest matches exactly one
+  `suggestedRefinements[].provenance.candidateDigest` on the *target* entry, and that the supplied
+  `admitted` value is deep-equal to that exact suggestion's `suggested` value -- never trusting that a
+  caller-supplied digest and a caller-supplied `admitted` actually agree with each other. Omitting the
+  parameter on an `'edited'` call (the existing manual-EDIT call shape, unchanged) clears the field,
+  exactly like every other decision-reconstruction field that is rebuilt fresh from the current call's
+  inputs rather than carried over. `validateBootstrapManifestStructure()` validates the same
+  constraints independently -- including the exactly-one-match count and the
+  `refinementProvenance === undefined` requirement -- so a hand-tampered manifest cannot carry an
+  entry that violates any part of the iff rule. Neither `fingerprintEntrySources()` nor
+  `fingerprintBootstrapAdmission()` change.
+- `src/lib/bootstrapReview.ts` -- a new controller function, the *only* new entry point the UI calls
+  for this action. It never constructs a `BootstrapProposal` itself the way manual EDIT's
+  `saveEdit()` does -- the UI supplies identity only (`entryId`, `candidateDigest`); the controller
+  resolves the actual suggestion. A caller-supplied proposal plus digest is never accepted as two
+  independently trusted values.
+  ```ts
+  selectBootstrapReviewSuggestion(
+    manifest: BootstrapManifest,
+    assignments: BootstrapAssignments,
+    entryId: string,
+    candidateDigest: string,
+  ): { readonly manifest: BootstrapManifest; readonly assignments: BootstrapAssignments }
+  ```
+  Internally, in order:
+  ```text
+  resolve entry by exact entryId                          (throw if no such entry)
+  -> verify entry.refinementProvenance === undefined       (fail closed on an AI-added entry --
+                                                              enforced here, not merely inherited
+                                                              from B4a/B4b construction)
+  -> inspect only entry.suggestedRefinements               (never any other entry's)
+  -> matches = entry.suggestedRefinements.filter(
+       s => s.provenance.candidateDigest === candidateDigest)
+  -> require matches.length === 1                          (throw on 0 -- not found on THIS entry,
+                                                              even if that digest is real on a
+                                                              different entry in the same manifest;
+                                                              throw on 2+ -- fail closed rather than
+                                                              silently taking the first match)
+  -> verify suggestion kind matches entry kind              (defense in depth -- B4a/B4b already
+                                                              guarantee this by construction, but
+                                                              never trusted blindly here)
+  -> verify suggested.id matches entry.proposed.id          (defense in depth against a
+                                                              hand-tampered suggestedRefinements
+                                                              entry that violates B4b's own
+                                                              "suggestion keeps the target's id"
+                                                              guarantee)
+  -> call the existing edited-decision path with:
+       admitted = suggestion.suggested
+       selectedRefinementCandidateDigest = candidateDigest
+  ```
+  The last step delegates to the existing `decideBootstrapReviewEntry(manifest, assignments,
+  entryId, 'edited', suggestion.suggested, candidateDigest)` -- reusing its already-correct
+  assignment-clearing logic (an assignment pointing at what this entry resolved to *before* the
+  decision is cleared, exactly as it already is for every other decision change) rather than
+  reimplementing it.
+- `src/components/BootstrapReviewWorkspace.tsx` -- gains a new required
+  `onSelectSuggestion: (entryId: string, candidateDigest: string) => void` prop, wired to a new
+  local handler calling `selectBootstrapReviewSuggestion()` (mirroring `handleDecideReviewEntry`'s
+  existing `isStale`/`isRefining` defense-in-depth guard). Its existing per-entry block gains one
+  compact row per `entry.suggestedRefinements[]` entry: the suggested working label, a short
+  `candidateDigest` prefix (enough to visually correlate with the fuller detail rendered below in
+  `StructuralReviewPanel.tsx`), and either a `USE THIS SUGGESTION` button or a `SELECTED` marker --
+  derived purely from `entry.selectedRefinementCandidateDigest === suggestion.provenance
+  .candidateDigest`, never independent component state, so close/reopen/re-render can never drift
+  from what the manifest actually says.
+- `src/components/StructuralReviewPanel.tsx` -- **unchanged.** Continues to render full suggestion
+  proposal/evidence/provenance exactly as B4c2 left it; gains no prop, no callback, no authority.
+  Its existing RED gate (`bootstrapStructuralReviewRefinementPresentation.test.tsx`) is not touched
+  and continues to pass unmodified.
+
+**Explicitly deferred out of B4c3** (named, not abandoned):
+
+- `BootstrapReceiptEntry`/`prepareBootstrap()` copying `selectedRefinementCandidateDigest` (or
+  `refinementProvenance`/`suggestedRefinements`) through to the receipt -- B4d's job, once B4c3
+  exists to produce a real decided manifest with a real selection to prove it against. B4c3 does not
+  touch `prepareBootstrap.ts` at all.
+- The pre-existing "re-approving an entry after an earlier edit reverts to its original proposed
+  value" quirk -- inherited unmodified; a selection's digest still correctly clears when this happens,
+  which is the only thing B4c3 needs to be true about it.
+- Any change to `assessBootstrapReviewReadiness()`/`isBootstrapReviewComplete()` -- a selection is
+  just another `'edited'` decision as far as readiness is concerned, already handled.
+
+**B4c3 RED gate (sketch -- not yet frozen; drafted against the settled decisions above):**
+
+1. `USE THIS SUGGESTION` produces exactly `decision: 'edited'`, `admitted` deep-equal to
+   `suggestion.suggested`, and `selectedRefinementCandidateDigest` equal to
+   `suggestion.provenance.candidateDigest` -- committed immediately, no intermediate staged state;
+2. selecting a different suggestion on the same entry replaces the prior selection atomically (one
+   decision, not two) -- old digest never lingers alongside the new one;
+3. a manual edit (via the existing SAVE EDIT path) on an entry that currently has a selection clears
+   `selectedRefinementCandidateDigest`, even when the newly typed values happen to equal the
+   suggestion's;
+4. REJECT and APPROVE on a currently-selected entry both clear `selectedRefinementCandidateDigest`
+   (APPROVE additionally reverts to `proposed`, the existing, unmodified quirk);
+5. `selectBootstrapReviewSuggestion()`/`decideBootstrapManifestEntry()` reject a candidateDigest that
+   does not name a real suggestion on the *named* entry -- including one that is a real digest on a
+   *different* entry in the same manifest (proves entry-scoping, not just "digest exists somewhere");
+6. `decideBootstrapManifestEntry()` rejects a hand-supplied `(admitted, selectedRefinementCandidateDigest)`
+   pair where `admitted` does not deep-equal the named suggestion's `suggested` value;
+7. `validateBootstrapManifestStructure()` independently rejects a hand-tampered manifest carrying
+   `selectedRefinementCandidateDigest` without `decision === 'edited'`, or naming a nonexistent/
+   wrong-entry digest, or attached to an entry with `refinementProvenance !== undefined`, or naming a
+   digest that matches more than one attached suggestion;
+8. selecting a suggestion on an AI-added entry (`refinementProvenance !== undefined`) rejects at
+   `selectBootstrapReviewSuggestion()`, `decideBootstrapManifestEntry()`, and
+   `validateBootstrapManifestStructure()` alike -- even on a hand-built manifest that attaches a
+   well-formed `suggestedRefinements` entry to it, proving the guard is enforced at B4c3's own
+   boundary rather than merely inherited from B4a/B4b construction;
+9. two suggestions attached to the same entry sharing an identical `candidateDigest` reject rather
+   than silently resolving to whichever is first in the array -- at
+   `selectBootstrapReviewSuggestion()` (via the exact-one-match count) and independently at
+   `validateBootstrapManifestStructure()`;
+10. every sibling suggestion remains present and rendered after one is selected -- none removed,
+    hidden, or reordered; the selected one's marker is present, every other's is absent;
+11. the selected marker is derived purely from `entry.selectedRefinementCandidateDigest ===
+    suggestion.provenance.candidateDigest` on each render -- no independent UI state; a fresh render
+    from the same manifest (simulating close/reopen) reproduces the identical marker placement;
+12. `fingerprintBootstrapAdmission()` produces the identical output for two manifests that differ
+    only in `selectedRefinementCandidateDigest` (same `entryId`/`decision`/`admitted` otherwise) --
+    proves admission-identity equivalence regardless of provenance;
+13. `entriesFingerprint`/manifest `id` are unaffected by any decision, selection included -- a
+    manifest's identity before and after any number of `selectBootstrapReviewSuggestion()`/
+    `decideBootstrapReviewEntry()` calls stays byte-identical;
+14. `prepareBootstrap()` and `BootstrapReceiptEntry` are untouched by this slice -- a receipt
+    produced from a manifest containing a selection carries no new field (still faithfully
+    admits the selected proposal's *value*, silent on *how* it was chosen) -- proves B4d's scope
+    boundary rather than silently starting it;
+15. static reachable-import-graph confirmation that `StructuralReviewPanel.tsx` never imports
+    `selectBootstrapReviewSuggestion` and never receives a decision-authority prop -- the same
+    "zero decision authority" proof B4c2 already established, reconfirmed rather than weakened by
+    this slice.
+
+**B4c3 contract: FROZEN.** Reflects both settled decisions (fingerprint scope: no new
+`reviewStateFingerprint`, neither existing fingerprint incorporates `selectedRefinementCandidateDigest`;
+placement: Option A, `StructuralReviewPanel.tsx` stays permanently read-only) plus the hardening pass
+adding `entry.refinementProvenance === undefined` to the validity rule and controller, and the
+exactly-one-match count replacing `.find()`-style first-match resolution, both enforced independently
+in `decideBootstrapManifestEntry()`, `selectBootstrapReviewSuggestion()`, and
+`validateBootstrapManifestStructure()`. RED is written against this contract next.
 
 ## Post-B4 backlog — explicitly not part of B3c/B3d
 
