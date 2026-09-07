@@ -99,10 +99,16 @@ export type BootstrapRefinementArtifact = InferenceArtifact<BootstrapRefinementP
  * B4a source authority: BootstrapManifest.boundSourceDocuments is the sole
  * source-document input to refinement (see TODO.md). A baseline is eligible
  * only while every entry is untouched by author review -- once any decision
- * or assignment exists, refinement is unavailable for that session.
+ * or assignment exists, refinement is unavailable for that session. A
+ * baseline that already carries B4b's refinementMetadata (i.e. is itself
+ * the result of a prior merge) is never eligible either, regardless of
+ * decision state: the master B4 contract rules out AI-on-AI iterative
+ * refinement, so at most one successful artifact may ever be merged into
+ * one baseline manifest.
  */
 export function isBootstrapRefinementEligible(manifest: BootstrapManifest): boolean {
-  return manifest.entries.every((entry) => entry.decision === 'pending' && entry.admitted === undefined);
+  return manifest.refinementMetadata === undefined
+    && manifest.entries.every((entry) => entry.decision === 'pending' && entry.admitted === undefined);
 }
 
 // ---------------------------------------------------------------------------

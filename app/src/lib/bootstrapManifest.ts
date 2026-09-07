@@ -1,4 +1,4 @@
-import type { AuthorSourceDocument, StoryProject } from '../types';
+import type { AuthorSourceDocument, InferenceReceipt, StoryProject } from '../types';
 
 /**
  * Bootstrap Manifest Domain Authority (B1).
@@ -182,6 +182,42 @@ export interface BootstrapDiscoveryConfidence {
 }
 
 // ---------------------------------------------------------------------------
+// B4 refinement provenance (schema extension; B1/B2 never produce these --
+// only the B4b merge module does)
+// ---------------------------------------------------------------------------
+
+/**
+ * Candidate-level linkage only -- never a copied, independently-reconstructed
+ * receipt. The one exact artifact-level record (receipt, digests, baseline
+ * identity) lives once on BootstrapManifest.refinementMetadata; an entry (or
+ * a suggestedRefinement) only carries enough to link back to it, so the two
+ * copies cannot drift apart.
+ */
+export interface BootstrapRefinementProvenance {
+  readonly candidateDigest: string;
+  /** Present only when this provenance describes a suggested edit; absent for an addition. */
+  readonly refinesBaselineEntryId?: string;
+}
+
+/** One AI-suggested edit attached to an existing deterministic entry -- never a duplicate entry. */
+export interface BootstrapSuggestedRefinement {
+  readonly suggested: BootstrapProposal;
+  readonly provenance: BootstrapRefinementProvenance;
+}
+
+/**
+ * The one artifact-level provenance record for a combined (post-B4b-merge)
+ * manifest. Absent on a pure B2 baseline manifest.
+ */
+export interface BootstrapManifestRefinementMetadata {
+  readonly baselineManifestId: string;
+  readonly entryIdMap: Readonly<Record<string, string>>;
+  readonly artifactDigest: string;
+  readonly rawOutputDigest: string;
+  readonly receipt: InferenceReceipt;
+}
+
+// ---------------------------------------------------------------------------
 // Manifest entry / manifest
 // ---------------------------------------------------------------------------
 
@@ -196,6 +232,10 @@ export interface BootstrapManifestEntry {
   /** Present only when supplied by discovery; manual/legacy entries remain honestly absent. */
   readonly discoveryConfidence?: BootstrapDiscoveryConfidence;
   readonly supportedForApplication: boolean;
+  /** Present only on an entry that originated as a B4 AI addition. */
+  readonly refinementProvenance?: BootstrapRefinementProvenance;
+  /** Present only on a deterministic entry with one or more B4 AI suggested edits attached. */
+  readonly suggestedRefinements?: readonly BootstrapSuggestedRefinement[];
 }
 
 export interface BootstrapManifest {
@@ -212,6 +252,8 @@ export interface BootstrapManifest {
   readonly boundSourceFingerprint: string;
   readonly entriesFingerprint: string;
   readonly entries: readonly BootstrapManifestEntry[];
+  /** Present only on a combined (post-B4b-merge) manifest, absent on a pure B2 baseline. */
+  readonly refinementMetadata?: BootstrapManifestRefinementMetadata;
 }
 
 // ---------------------------------------------------------------------------
@@ -305,22 +347,59 @@ export function sourceDocumentsAreIdentical(
   return true;
 }
 
-interface BootstrapEntrySource {
+export interface BootstrapEntrySource {
   readonly kind: BootstrapProposalKind;
   readonly sourceIndex: number;
   readonly proposed: BootstrapProposal;
   readonly evidence: readonly SourceEvidenceUnit[];
   readonly discoveryConfidence?: BootstrapDiscoveryConfidence;
+  readonly refinementProvenance?: BootstrapRefinementProvenance;
+  readonly suggestedRefinements?: readonly BootstrapSuggestedRefinement[];
 }
 
-function fingerprintEntrySources(entries: readonly BootstrapEntrySource[]): string {
-  return fingerprintString(stableSerialize(entries.map((e) => ({
+/**
+ * Exported so the B4b merge module computes a combined
+ * manifest's entriesFingerprint using exactly this rule rather than a
+ * reimplementation that could drift from it (same reasoning as
+ * expectedEntryId below). B4 refinement provenance participates here so a
+ * changed candidateDigest/suggestedRefinement changes manifest identity.
+ */
+/**
+ * `refinementBinding`, when supplied, is folded into the hash alongside the
+ * entries so a combined (post-B4b-merge) manifest's identity always differs
+ * from its baseline -- even a zero-candidate merge, whose rebased entries
+ * are otherwise byte-identical in content to the baseline's own. Omitting it
+ * (every existing B1/B2 caller) reproduces the exact prior hash unchanged.
+ */
+export function fingerprintEntrySources(
+  entries: readonly BootstrapEntrySource[],
+  refinementBinding?: {
+    readonly baselineManifestId: string;
+    readonly artifactDigest: string;
+    readonly rawOutputDigest: string;
+  },
+): string {
+  const mappedEntries = entries.map((e) => ({
     kind: e.kind,
     sourceIndex: e.sourceIndex,
     proposed: e.proposed,
     evidence: e.evidence,
     ...(e.discoveryConfidence === undefined ? {} : { discoveryConfidence: e.discoveryConfidence }),
-  }))), 'bootstrap-entries');
+    ...(e.refinementProvenance === undefined ? {} : { refinementProvenance: e.refinementProvenance }),
+    // suggestedRefinements[].provenance.refinesBaselineEntryId is deliberately excluded here: it
+    // names this same entry's own (still-being-computed) rebased id, so hashing it would make the
+    // combined manifest id depend on itself. Omitting it is lossless for identity purposes -- which
+    // entry a suggestion targets is already implied by which entry's suggestedRefinements array it
+    // lives in, which IS fingerprinted via that entry's own kind/sourceIndex/proposed/evidence.
+    ...(e.suggestedRefinements === undefined ? {} : {
+      suggestedRefinements: e.suggestedRefinements.map((s) => ({
+        suggested: s.suggested,
+        candidateDigest: s.provenance.candidateDigest,
+      })),
+    }),
+  }));
+  const payload = refinementBinding === undefined ? mappedEntries : { entries: mappedEntries, refinementBinding };
+  return fingerprintString(stableSerialize(payload), 'bootstrap-entries');
 }
 
 export function fingerprintBootstrapAdmission(manifest: BootstrapManifest): string {
@@ -340,7 +419,12 @@ export function expectedBootstrapManifestId(
   return `bootstrap-manifest:${projectId}:${boundSourceFingerprint}:${entriesFingerprint}`;
 }
 
-function expectedEntryId(manifestId: string, kind: BootstrapProposalKind, sourceIndex: number): string {
+/**
+ * Exported so the B4b merge module rebases every baseline
+ * entry's id under the combined manifest's own id using exactly this rule,
+ * rather than a reimplementation that could drift from it.
+ */
+export function expectedEntryId(manifestId: string, kind: BootstrapProposalKind, sourceIndex: number): string {
   return `${manifestId}:${kind}:${sourceIndex}`;
 }
 
@@ -556,6 +640,15 @@ export function decideBootstrapManifestEntry(
         ? {}
         : { discoveryConfidence: structuredClone(entry.discoveryConfidence) }),
       supportedForApplication: entry.supportedForApplication,
+      // B4 refinement provenance is not decision state -- an author deciding an entry (even
+      // one that originated as a B4 AI addition, or one with suggestions attached) must not
+      // silently lose it. Preserved exactly like discoveryConfidence above.
+      ...(entry.refinementProvenance === undefined
+        ? {}
+        : { refinementProvenance: structuredClone(entry.refinementProvenance) }),
+      ...(entry.suggestedRefinements === undefined
+        ? {}
+        : { suggestedRefinements: structuredClone(entry.suggestedRefinements) }),
       ...(decision === 'edited' && admitted !== undefined ? { admitted: structuredClone(admitted) } : {}),
     };
   });
@@ -593,8 +686,15 @@ export function validateBootstrapManifestStructure(manifest: BootstrapManifest):
     proposed: entry.proposed,
     evidence: entry.evidence,
     ...(entry.discoveryConfidence === undefined ? {} : { discoveryConfidence: entry.discoveryConfidence }),
+    ...(entry.refinementProvenance === undefined ? {} : { refinementProvenance: entry.refinementProvenance }),
+    ...(entry.suggestedRefinements === undefined ? {} : { suggestedRefinements: entry.suggestedRefinements }),
   }));
-  const calculatedEntriesFingerprint = fingerprintEntrySources(entrySources);
+  const refinementBinding = manifest.refinementMetadata === undefined ? undefined : {
+    baselineManifestId: manifest.refinementMetadata.baselineManifestId,
+    artifactDigest: manifest.refinementMetadata.artifactDigest,
+    rawOutputDigest: manifest.refinementMetadata.rawOutputDigest,
+  };
+  const calculatedEntriesFingerprint = fingerprintEntrySources(entrySources, refinementBinding);
   if (manifest.entriesFingerprint !== calculatedEntriesFingerprint) {
     throw new Error('Malformed Bootstrap Manifest entries fingerprint');
   }
@@ -675,6 +775,37 @@ export function validateBootstrapManifestStructure(manifest: BootstrapManifest):
         throw new Error(`Malformed Bootstrap Manifest discovery confidence reasons on entry ${entry.id}`);
       }
     }
+    if (entry.refinementProvenance !== undefined) {
+      const provenance = entry.refinementProvenance;
+      if (!isRecord(provenance) || !isNonBlankString(provenance.candidateDigest)) {
+        throw new Error(`Malformed Bootstrap Manifest refinementProvenance on entry ${entry.id}`);
+      }
+      // An entry's own top-level refinementProvenance describes only how *that entry itself*
+      // originated as a B4 addition -- it never targets another entry. A target reference belongs
+      // exclusively inside a suggestedRefinement's own provenance (checked separately below), so
+      // refinesBaselineEntryId must be absent here, not merely well-typed if present.
+      if (provenance.refinesBaselineEntryId !== undefined) {
+        throw new Error(`Malformed Bootstrap Manifest: entry ${entry.id} refinementProvenance must not carry refinesBaselineEntryId`);
+      }
+    }
+    if (entry.suggestedRefinements !== undefined) {
+      if (!Array.isArray(entry.suggestedRefinements) || entry.suggestedRefinements.length === 0) {
+        throw new Error(`Malformed Bootstrap Manifest suggestedRefinements on entry ${entry.id}`);
+      }
+      for (const suggestion of entry.suggestedRefinements) {
+        if (!isRecord(suggestion) || !isProposalForKind(entry.kind, suggestion.suggested)) {
+          throw new Error(`Malformed Bootstrap Manifest suggestedRefinement on entry ${entry.id}`);
+        }
+        const provenance = suggestion.provenance;
+        if (
+          !isRecord(provenance)
+          || !isNonBlankString(provenance.candidateDigest)
+          || provenance.refinesBaselineEntryId !== entry.id
+        ) {
+          throw new Error(`Malformed Bootstrap Manifest suggestedRefinement provenance on entry ${entry.id}`);
+        }
+      }
+    }
     if (!['pending', 'approved', 'edited', 'rejected'].includes(entry.decision)) {
       throw new Error(`Malformed Bootstrap Manifest decision: ${entry.id}`);
     }
@@ -684,6 +815,25 @@ export function validateBootstrapManifestStructure(manifest: BootstrapManifest):
       }
     } else if (entry.admitted !== undefined) {
       throw new Error(`Malformed Bootstrap Manifest entry carries an unauthorized admitted value: ${entry.id}`);
+    }
+  }
+
+  if (manifest.refinementMetadata !== undefined) {
+    const metadata = manifest.refinementMetadata;
+    if (
+      !isRecord(metadata)
+      || !isNonBlankString(metadata.baselineManifestId)
+      || !isNonBlankString(metadata.artifactDigest)
+      || !isNonBlankString(metadata.rawOutputDigest)
+      || !isRecord(metadata.entryIdMap)
+      || !isRecord(metadata.receipt)
+    ) {
+      throw new Error('Malformed Bootstrap Manifest refinementMetadata');
+    }
+    for (const [oldId, newId] of Object.entries(metadata.entryIdMap)) {
+      if (!isNonBlankString(oldId) || !isNonBlankString(newId)) {
+        throw new Error('Malformed Bootstrap Manifest refinementMetadata.entryIdMap');
+      }
     }
   }
 }
