@@ -20,7 +20,7 @@ B3c — Author Decisions + Explicit Assignments  ✅ done, pushed (1a93177)
         ↓
 B3d — Atomic Canonical Admission  ✅ done, not yet pushed (14d86e2)
         ↓
-B4 — Optional AI Refinement  ← split into B4a/B4b/B4c/B4d; B4a ✅ done, pushed (ded2db7); B4a hardening ✅ done, pushed (3ab5357); B4b ✅ done, pushed (de787b0); B4c1 contract + RED frozen (573f985), GREEN not yet implemented; B4c2/B4c3/B4d not started
+B4 — Optional AI Refinement  ← split into B4a/B4b/B4c/B4d; B4a ✅ done, pushed (ded2db7); B4a hardening ✅ done, pushed (3ab5357); B4b ✅ done, pushed (de787b0); B4c1 ✅ done, not yet pushed (fbf06ec); B4c2/B4c3/B4d not started
 ```
 
 ### B2 — Deterministic Bootstrap Discovery ✅ shipped
@@ -1603,7 +1603,7 @@ B4c3 — explicit author selection of a suggested edit
   this is resolved.
 ```
 
-##### B4c1 — REFINE transport + lifecycle  ← contract + RED frozen (573f985); GREEN not yet implemented
+##### B4c1 — REFINE transport + lifecycle  ✅ shipped (contract efc19eb, RED 573f985, GREEN fbf06ec)
 
 **Scope.** Exactly one new author action: an explicit `REFINE WITH HERMES` control, available only
 on a completely untouched review session, that calls B4a once via the new route, merges the result

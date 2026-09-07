@@ -411,7 +411,52 @@ assume its caller handed it a valid manifest.
   before `isBootstrapRefinementEligible()` and before the provider is ever touched.
 - Verified: full `npm test`, `tsc --noEmit`, production build, and `git diff --check` all pass.
 
-**Committed at `b24d806`; not yet pushed to `origin/main`.**
+**Pushed to `origin/main`** (at `b24d806`).
 
-**Not yet done:** B4c (Optional Refinement UI + Lifecycle), B4d (End-to-End Authority Proof). See
-`TODO.md`.
+## B4c1 -- REFINE transport + lifecycle
+
+- Drafted against the real current surfaces (`StoryEditor.tsx`'s review-session state and
+  re-entrancy-guard pattern, `BootstrapReviewWorkspace.tsx`'s closed prop list, `App.tsx`'s existing
+  fetch/`createInferenceArtifact` client pattern, `server.ts`'s route registration order, every
+  existing route's plain `express.json()` shape), then revised per three corrections before freezing
+  (`efc19eb`): duplicate-key HTTP detection is retained rather than dropped to match older routes
+  (explicitly deferred from B4a into B4c, never abandoned); the operation boundary narrows to the
+  server running only B4a and returning the artifact, with the client-side B4b merge happening inside
+  `App.tsx`'s own `try/catch` (closing a real gap where a merge failure after a successful fetch would
+  have escaped the existing error path); and the lifecycle rules became explicit, load-bearing RED
+  requirements. A frozen, deliberately-non-taxonomic 400/500 HTTP meaning was pinned alongside it.
+- RED (`573f985`) froze two files: `tests/bootstrapRefineLifecycle.test.tsx` (`StoryEditor`'s own
+  contract with a mocked `onRefineBootstrap`, genuinely red via a behavioral assertion -- no REFINE
+  control existed yet -- not a missing-module placeholder) and `tests/bootstrapRefineTransport.test.ts`
+  (the route's transport logic, extracted into a directly-testable `handleBootstrapRefineRequest()`
+  mirroring how `server/narrativePipeline.ts` already separates orchestration from `server.ts`'s thin
+  routes, since this codebase has no live-HTTP integration test infrastructure).
+- GREEN (`fbf06ec`) adds `server/bootstrapRefineRoute.ts` and wires `server.ts`'s new route ahead of
+  the app-wide `express.json()`; `App.tsx`'s `handleRefineBootstrap()`; `StoryEditor.tsx`'s REFINE
+  state/handler/eligibility expression/button; `BootstrapReviewWorkspace.tsx`'s new `isRefining` prop
+  freezing every control; and `workbenchErrors.ts`'s new `'bootstrap-refine'` source. Along the way,
+  `isBootstrapRefinementEligible()` was moved from `bootstrapRefinement.ts` to `bootstrapManifest.ts`
+  (with a compatibility re-export left behind) because B4a's own already-shipped reachable-import-graph
+  test bans `StoryEditor.tsx` from importing `bootstrapRefinement.ts` by module name -- moving the
+  predicate to its more natural home let `StoryEditor.tsx` use it without duplicating the logic inline
+  or touching that frozen test. A genuine bug in the RED file's own fixture (a `projectId` override
+  that was silently ignored, so the late-completion-on-project-switch test never actually switched
+  projects) was found and fixed during GREEN, disclosed rather than silently patched.
+- A fresh, independent adversarial review (no exposure to the implementation reasoning), asked
+  specifically to attack the deliberately-not-unit-tested client seam (HTTP success -> artifact
+  reconstruction -> a client-side merge throw -> the same visible refine failure), traced that path
+  line by line and found it sound -- every merge failure is a plain synchronous exception inside the
+  same `try` as the fetch, caught by the identical `catch`, no unhandled-rejection or bypass path. It
+  found and this same commit fixed two real, non-exploitable hardening gaps in
+  `BootstrapReviewWorkspace.tsx`: SAVE EDIT/CANCEL/the edit-label input had no `disabled` attribute at
+  all (only a passive `useEffect` closed the form after the fact -- fixed with direct `disabled`
+  attributes plus switching that effect to `useLayoutEffect`); and REGENERATE REVIEW had no
+  `isRefining` guard, unlike CLOSE (fixed, plus a defense-in-depth guard on
+  `regenerateReviewSession()` itself). Both were confirmed inert against actual data mutation under
+  the app's current reachable UI, closed for consistency ahead of B4c2 adding more surface area.
+- Verified: full `npm test`, `tsc --noEmit`, production build, and `git diff --check` all pass.
+
+**Committed at `fbf06ec`; not yet pushed to `origin/main`.**
+
+**Not yet done:** B4c2 (render AI additions/suggestions), B4c3 (suggestion selection, undesigned), B4d
+(End-to-End Authority Proof). See `TODO.md`.
