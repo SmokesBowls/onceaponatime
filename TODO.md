@@ -20,7 +20,7 @@ B3c — Author Decisions + Explicit Assignments  ✅ done, pushed (1a93177)
         ↓
 B3d — Atomic Canonical Admission  ✅ done, not yet pushed (14d86e2)
         ↓
-B4 — Optional AI Refinement  ← split into B4a/B4b/B4c/B4d; B4a ✅ done, pushed (ded2db7); B4b contract + RED frozen (b81f037), GREEN not yet implemented
+B4 — Optional AI Refinement  ← split into B4a/B4b/B4c/B4d; B4a ✅ done, pushed (ded2db7); B4b ✅ done, not yet pushed (de787b0); B4c/B4d not started
 ```
 
 ### B2 — Deterministic Bootstrap Discovery ✅ shipped
@@ -1250,7 +1250,7 @@ Deliberately not in B4a's RED gate, each reserved for its named later increment:
 idempotency/retry-ordinal transport, and any change reachable from `BootstrapReviewWorkspace.tsx` or
 `StoryEditor.tsx`.
 
-#### B4b — Refinement Merge  ← contract + RED frozen (b81f037); GREEN not yet implemented
+#### B4b — Refinement Merge  ✅ shipped (contract 831a5a4, RED b81f037, GREEN de787b0)
 
 ```text
 BootstrapManifest

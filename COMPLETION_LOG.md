@@ -342,7 +342,57 @@ sections for the full contract.
   authoring failure mode this slice hit twice while writing escape sequences, caught before any
   gate ran).
 
-**Committed at `ded2db7`; not yet pushed to `origin/main`.**
+**Pushed to `origin/main`** (at `ded2db7`, confirmed synced via a pull/push that happened outside this
+log between B4a and B4b).
 
-**Not yet done:** B4b (Refinement Merge), B4c (Optional Refinement UI + Lifecycle), B4d
-(End-to-End Authority Proof). See `TODO.md`.
+## B4b -- Refinement Merge
+
+- Frozen the split/scope decision and B4a's contract together in `014e7f2`, a tiny prose correction in
+  `f44d909`, then B4b's own narrowed contract in `831a5a4` -- incorporating four hardening
+  clarifications before freezing: the baseline-binding requirement (merge only into the exact baseline
+  the artifact was produced against, re-checked at merge time, never trusted from B4a), explicit
+  baseline-entry field preservation (naming `discoveryConfidence` specifically -- AI refinement must
+  never acquire or fabricate B2 detector rationale), exact-identity-only suggestion targeting (never
+  label/alias/fuzzy matching), and a clean provenance-ownership split (one manifest-level
+  `refinementMetadata` record plus per-entry digest linkage only, never a copied receipt per entry).
+- RED (`b81f037`) froze `tests/bootstrapRefinementMerge.test.ts` against two not-yet-existing/
+  not-yet-exported boundaries (the whole `src/lib/bootstrapRefinementMerge.ts` module, and
+  `bootstrapManifest.ts`'s then-private `expectedEntryId()`) -- genuine `ERR_MODULE_NOT_FOUND`/type
+  RED matching the B2/B3d/B4a precedent, covering all 14 points of the frozen RED gate plus the
+  baseline-proposal-id collision rule from its prose, against hand-built fixtures (no Hermes call, no
+  B4a invocation).
+- GREEN (`de787b0`) extends `bootstrapManifest.ts` (the new provenance/metadata types and optional
+  fields, the newly-exported `expectedEntryId()`/`fingerprintEntrySources()`, extended structural
+  validation, and a fix so `decideBootstrapManifestEntry()` preserves the new fields on the entry
+  actually being decided, not just untouched ones) and adds `src/lib/bootstrapRefinementMerge.ts`
+  (`mergeBootstrapRefinementArtifact()`). Resolved a real circular dependency in the process (a
+  suggestion's provenance names its target's *rebased* id, which needs the manifest id, which needs
+  the entries fingerprint, which would include that same reference) by excluding
+  `refinesBaselineEntryId` from what gets hashed for suggestions -- lossless, since which entry a
+  suggestion targets is already implied by which entry's array it lives in. Also discovered and fixed
+  that a zero-candidate merge's rebased entries are byte-identical in content to the baseline's own, so
+  without a distinguishing artifact-binding folded into the entries fingerprint, the combined
+  manifest's id collided with its baseline's -- defeating "already-merged rejects a stale artifact"
+  precisely in that case; fixed via an optional `refinementBinding` parameter on
+  `fingerprintEntrySources()` that every existing B1/B2 caller omits (exact prior hash unchanged).
+- A fresh, independent adversarial review (no exposure to the implementation reasoning), asked
+  specifically to attack replay/double-merge behavior, provenance drift, exact-entry preservation,
+  malformed `refinementMetadata`, wrong-kind suggestion targets, evidence citation tampering, and
+  fingerprint collisions, found and this commit fixed two real issues before landing: merging a
+  *different*, correctly-bound second artifact onto an already-combined manifest silently succeeded
+  and dropped every earlier entry's own provenance/suggestions (closed per the master B4 contract's own
+  "AI-on-AI iterative refinement is out of scope" rule, both in the merge function and in B4a's
+  `isBootstrapRefinementEligible()` for defense in depth); and `validateBootstrapManifestStructure()`
+  accepted a nonsensical entry-level `refinementProvenance.refinesBaselineEntryId` that only ever
+  belongs inside a `suggestedRefinement`'s own provenance. Both fixes verified against the reviewer's
+  exact repro cases. One further observation (intra-artifact duplicate `candidateId` not re-checked by
+  B4b) was confirmed to already match the frozen contract's explicit scoping -- collision among
+  candidates is B4a's job -- so no change was made for it.
+- Verified: full `npm test`, `tsc --noEmit`, production build, and `git diff --check` all pass. No
+  control-byte corruption in any touched file (checked byte-for-byte after every edit -- the same
+  authoring failure mode B4a hit, caught immediately each time here).
+
+**Committed at `de787b0`; not yet pushed to `origin/main`.**
+
+**Not yet done:** B4c (Optional Refinement UI + Lifecycle), B4d (End-to-End Authority Proof). See
+`TODO.md`.
