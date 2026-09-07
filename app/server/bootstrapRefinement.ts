@@ -1,7 +1,7 @@
 import { createHash } from 'node:crypto';
 import type { InferenceReceipt } from '../src/types';
 import { createInferenceArtifact } from '../src/types';
-import { deepFreeze, type BootstrapManifest } from '../src/lib/bootstrapManifest';
+import { deepFreeze, validateBootstrapManifestStructure, type BootstrapManifest } from '../src/lib/bootstrapManifest';
 import {
   BOOTSTRAP_REFINEMENT_OPERATION,
   BOOTSTRAP_REFINEMENT_RESPONSE_SCHEMA,
@@ -183,6 +183,10 @@ export async function refineBootstrapManifest(
   baseline: BootstrapManifest,
   provider: ReceiptBearingModelProvider = getBootstrapRefinementProvider(),
 ): Promise<BootstrapRefinementArtifact> {
+  // An authority boundary must never assume its caller handed it a structurally valid
+  // manifest -- independently re-validate before eligibility (which only checks
+  // decision/admitted/refinementMetadata, not structural integrity) or the provider ever run.
+  validateBootstrapManifestStructure(baseline);
   if (!isBootstrapRefinementEligible(baseline)) {
     throw new Error('Bootstrap refinement requires a baseline manifest that is entirely pending with no admitted values.');
   }
