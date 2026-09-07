@@ -32,6 +32,14 @@ export interface BootstrapReviewWorkspaceProps {
    */
   readonly isRefining: boolean;
   readonly onDecide: (entryId: string, decision: BootstrapDecision, admitted?: BootstrapProposal) => void;
+  /**
+   * B4c3's "USE THIS SUGGESTION" authority -- the only new entry point this
+   * component gains. Wired to selectBootstrapReviewSuggestion(), which
+   * resolves the actual trusted suggestion from (entryId, candidateDigest)
+   * itself; this component never constructs a BootstrapProposal for it the
+   * way SAVE EDIT's saveEdit() does.
+   */
+  readonly onSelectSuggestion: (entryId: string, candidateDigest: string) => void;
   readonly onAssignPovActor: (actorId: string | null) => void;
   readonly onAssignCurrentLocation: (locationId: string | null) => void;
   readonly onRegenerate: () => void;
@@ -61,6 +69,7 @@ export const BootstrapReviewWorkspace: React.FC<BootstrapReviewWorkspaceProps> =
   isStale,
   isRefining,
   onDecide,
+  onSelectSuggestion,
   onAssignPovActor,
   onAssignCurrentLocation,
   onRegenerate,
@@ -206,6 +215,43 @@ export const BootstrapReviewWorkspace: React.FC<BootstrapReviewWorkspaceProps> =
                 >
                   CANCEL
                 </button>
+              </div>
+            )}
+
+            {entry.suggestedRefinements && entry.suggestedRefinements.length > 0 && (
+              <div className="space-y-1.5 border-t border-[#1A1A1A]/10 pt-2">
+                <span className="text-[9px] font-sans font-bold uppercase tracking-wider text-[#736B63]">AI suggestions</span>
+                {entry.suggestedRefinements.map((suggestion) => {
+                  const candidateDigest = suggestion.provenance.candidateDigest;
+                  const isSelected = entry.selectedRefinementCandidateDigest === candidateDigest;
+                  const label = 'working_label' in suggestion.suggested ? suggestion.suggested.working_label : candidateDigest;
+                  return (
+                    <div
+                      key={candidateDigest}
+                      data-suggestion-candidate-digest={candidateDigest}
+                      data-suggestion-selected={isSelected ? 'true' : 'false'}
+                      className="flex flex-wrap items-center justify-between gap-2 rounded border border-[#1A1A1A]/15 bg-white px-2 py-1.5"
+                    >
+                      <span className="text-[11px] font-serif italic text-[#1A1A1A]">
+                        {label} <span className="font-sans not-italic text-[9px] text-[#736B63]">digest {candidateDigest.slice(0, 8)}…</span>
+                      </span>
+                      {isSelected ? (
+                        <span className="rounded bg-[#2D5A27]/15 px-2 py-1 text-[9px] font-bold uppercase tracking-wider text-[#2D5A27]">
+                          SELECTED
+                        </span>
+                      ) : (
+                        <button
+                          type="button"
+                          disabled={controlsDisabled}
+                          onClick={() => onSelectSuggestion(entry.id, candidateDigest)}
+                          className="rounded border border-[#1A1A1A]/30 bg-[#FDFCF8] px-2 py-1 text-[9px] font-bold uppercase tracking-wider text-[#1A1A1A] hover:bg-white disabled:cursor-not-allowed disabled:opacity-40"
+                        >
+                          USE THIS SUGGESTION
+                        </button>
+                      )}
+                    </div>
+                  );
+                })}
               </div>
             )}
           </div>

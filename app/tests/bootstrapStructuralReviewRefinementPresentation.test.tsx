@@ -347,6 +347,7 @@ async function testApproveStillDecidesTheRealEntryWhenSuggestionsAreAttached() {
       isStale: false,
       isRefining: false,
       onDecide: (entryId: string, decision: string, admitted?: BootstrapProposal) => decisions.push({ entryId, decision, admitted }),
+      onSelectSuggestion: () => {},
       onAssignPovActor: () => {},
       onAssignCurrentLocation: () => {},
       onRegenerate: () => {},

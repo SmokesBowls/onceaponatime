@@ -93,6 +93,7 @@ export function decideBootstrapReviewEntry(
   entryId: string,
   decision: BootstrapDecision,
   admitted?: BootstrapProposal,
+  selectedRefinementCandidateDigest?: string,
 ): { readonly manifest: BootstrapManifest; readonly assignments: BootstrapAssignments } {
   const previousEntry = manifest.entries.find((entry) => entry.id === entryId);
   if (previousEntry && !previousEntry.supportedForApplication && (decision === 'approved' || decision === 'edited')) {
@@ -113,7 +114,7 @@ export function decideBootstrapReviewEntry(
     }
   }
 
-  const nextManifest = decideBootstrapManifestEntry(manifest, entryId, decision, admitted);
+  const nextManifest = decideBootstrapManifestEntry(manifest, entryId, decision, admitted, selectedRefinementCandidateDigest);
   let nextAssignments = assignments;
   if (previousAdmittedId !== undefined) {
     if (nextAssignments.activePovActorId === previousAdmittedId) {
@@ -125,6 +126,63 @@ export function decideBootstrapReviewEntry(
   }
 
   return { manifest: nextManifest, assignments: nextAssignments };
+}
+
+/**
+ * B4c3's controller entry point for "USE THIS SUGGESTION": the UI supplies
+ * identity only (`entryId`, `candidateDigest`) -- this function resolves
+ * the actual trusted suggestion itself, rather than accepting a
+ * caller-supplied proposal and digest as two independently trusted values.
+ * Resolution is entry-scoped only: a digest that is real on a *different*
+ * entry in the same manifest never resolves here, and a digest that
+ * matches more than one suggestion attached to *this* entry fails closed
+ * rather than silently taking the first match. Delegates to
+ * decideBootstrapReviewEntry() for the actual decision + assignment-clearing
+ * transition, reusing its already-correct logic rather than reimplementing
+ * it -- this function's only job is turning (entryId, candidateDigest) into
+ * the (decision, admitted, selectedRefinementCandidateDigest) triple that
+ * call expects.
+ */
+export function selectBootstrapReviewSuggestion(
+  manifest: BootstrapManifest,
+  assignments: BootstrapAssignments,
+  entryId: string,
+  candidateDigest: string,
+): { readonly manifest: BootstrapManifest; readonly assignments: BootstrapAssignments } {
+  const target = manifest.entries.find((entry) => entry.id === entryId);
+  if (!target) {
+    throw new Error(`Unknown Bootstrap Manifest entry: ${entryId}`);
+  }
+  // Fail closed on an AI-added entry here too, at this controller's own
+  // boundary -- not merely relying on B4a/B4b's upstream guarantee that a
+  // suggestion never targets one, and not merely on
+  // decideBootstrapManifestEntry()'s own independent check below.
+  if (target.refinementProvenance !== undefined) {
+    throw new Error(
+      `Bootstrap Manifest entry ${entryId} originated as a B4 AI addition and can never be the target `
+      + 'of a suggestion selection',
+    );
+  }
+  const matches = (target.suggestedRefinements ?? []).filter(
+    (suggestion) => suggestion.provenance.candidateDigest === candidateDigest,
+  );
+  if (matches.length !== 1) {
+    throw new Error(
+      `Bootstrap Manifest entry ${entryId} does not carry exactly one suggestion with candidateDigest `
+      + `${candidateDigest} (found ${matches.length})`,
+    );
+  }
+  const suggestion = matches[0];
+  // Defense in depth -- B4a/B4b already guarantee both of these by
+  // construction, but neither is ever trusted blindly here.
+  if (suggestion.suggested.kind !== target.kind) {
+    throw new Error(`Bootstrap Manifest entry ${entryId}: suggestion kind does not match the entry's own kind`);
+  }
+  if ('id' in suggestion.suggested && 'id' in target.proposed && suggestion.suggested.id !== target.proposed.id) {
+    throw new Error(`Bootstrap Manifest entry ${entryId}: suggestion id does not match the entry's own proposed id`);
+  }
+
+  return decideBootstrapReviewEntry(manifest, assignments, entryId, 'edited', suggestion.suggested, candidateDigest);
 }
 
 /** Every entry currently admitted (approved, or edited-and-approved) as the given kind. */

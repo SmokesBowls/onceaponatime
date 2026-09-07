@@ -44,7 +44,7 @@ import {
   type BootstrapManifest,
   type BootstrapProposal,
 } from '../lib/bootstrapManifest';
-import { decideBootstrapReviewEntry, isBootstrapReviewComplete } from '../lib/bootstrapReview';
+import { decideBootstrapReviewEntry, isBootstrapReviewComplete, selectBootstrapReviewSuggestion } from '../lib/bootstrapReview';
 import type { BootstrapReceipt } from '../lib/prepareBootstrap';
 import { BootstrapReviewWorkspace } from './BootstrapReviewWorkspace';
 
@@ -249,6 +249,13 @@ export const StoryEditor: React.FC<StoryEditorProps> = ({
     if (isReviewSessionStale || isRefining) return; // defense in depth: never mutate a session the UI has already disabled
     setReviewSession((prev) => (
       prev ? decideBootstrapReviewEntry(prev.manifest, prev.assignments, entryId, decision, admitted) : prev
+    ));
+  };
+
+  const handleSelectReviewSuggestion = (entryId: string, candidateDigest: string) => {
+    if (isReviewSessionStale || isRefining) return; // defense in depth: never mutate a session the UI has already disabled
+    setReviewSession((prev) => (
+      prev ? selectBootstrapReviewSuggestion(prev.manifest, prev.assignments, entryId, candidateDigest) : prev
     ));
   };
 
@@ -937,6 +944,7 @@ export const StoryEditor: React.FC<StoryEditorProps> = ({
                   isStale={isReviewSessionStale}
                   isRefining={isRefining}
                   onDecide={handleDecideReviewEntry}
+                  onSelectSuggestion={handleSelectReviewSuggestion}
                   onAssignPovActor={handleAssignReviewPovActor}
                   onAssignCurrentLocation={handleAssignReviewCurrentLocation}
                   onRegenerate={regenerateReviewSession}

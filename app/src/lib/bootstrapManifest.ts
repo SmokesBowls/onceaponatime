@@ -255,6 +255,18 @@ export interface BootstrapManifestEntry {
   readonly refinementProvenance?: BootstrapRefinementProvenance;
   /** Present only on a deterministic entry with one or more B4 AI suggested edits attached. */
   readonly suggestedRefinements?: readonly BootstrapSuggestedRefinement[];
+  /**
+   * B4c3: present iff `decision === 'edited'` AND `refinementProvenance ===
+   * undefined` (a suggestion can only ever be selected against a genuine
+   * deterministic/B2 baseline entry, never an AI-added one) AND it names
+   * exactly one of this entry's own `suggestedRefinements[].provenance
+   * .candidateDigest` AND `admitted` deep-equals that exact suggestion's
+   * `suggested` value. Describes current state only, never lineage -- every
+   * transition away from that exact state clears it. Pure review state:
+   * neither `entriesFingerprint` nor `fingerprintBootstrapAdmission()`
+   * incorporate it.
+   */
+  readonly selectedRefinementCandidateDigest?: string;
 }
 
 export interface BootstrapManifest {
@@ -626,11 +638,32 @@ export function buildBootstrapManifest(
 // Decision transitions
 // ---------------------------------------------------------------------------
 
+/**
+ * B4c3: every suggestion attached to `entry` whose candidateDigest matches.
+ * Resolution is always scoped to exactly this entry's own
+ * suggestedRefinements -- never a global search across the manifest, so a
+ * digest that happens to be real on a *different* entry never resolves
+ * here. Returning the raw match array (rather than throwing) lets each
+ * caller -- decideBootstrapManifestEntry()'s own error and
+ * validateBootstrapManifestStructure()'s "Malformed Bootstrap Manifest"
+ * wording -- word its own failure while both enforce the identical
+ * exactly-one rule, so they cannot drift apart on what counts as a match.
+ */
+function matchingSuggestions(
+  entry: BootstrapManifestEntry,
+  candidateDigest: string,
+): readonly BootstrapSuggestedRefinement[] {
+  return (entry.suggestedRefinements ?? []).filter(
+    (suggestion) => suggestion.provenance.candidateDigest === candidateDigest,
+  );
+}
+
 export function decideBootstrapManifestEntry(
   manifest: BootstrapManifest,
   entryId: string,
   decision: BootstrapDecision,
   admitted?: BootstrapProposal,
+  selectedRefinementCandidateDigest?: string,
 ): BootstrapManifest {
   const target = manifest.entries.find((entry) => entry.id === entryId);
   if (!target) {
@@ -645,6 +678,33 @@ export function decideBootstrapManifestEntry(
     }
   } else if (admitted !== undefined) {
     throw new Error('Only an edited Bootstrap Manifest entry may carry an admitted value');
+  }
+
+  if (selectedRefinementCandidateDigest !== undefined) {
+    if (decision !== 'edited') {
+      throw new Error('Only an edited Bootstrap Manifest entry may carry a selectedRefinementCandidateDigest');
+    }
+    if (target.refinementProvenance !== undefined) {
+      throw new Error(
+        `Bootstrap Manifest entry ${entryId} originated as a B4 AI addition and can never be the target `
+        + 'of a suggestion selection',
+      );
+    }
+    const matches = matchingSuggestions(target, selectedRefinementCandidateDigest);
+    if (matches.length !== 1) {
+      throw new Error(
+        `Bootstrap Manifest entry ${entryId} does not carry exactly one suggestion with candidateDigest `
+        + `${selectedRefinementCandidateDigest} (found ${matches.length})`,
+      );
+    }
+    // Never trust that a caller-supplied digest and a caller-supplied
+    // admitted value actually agree with each other.
+    if (stableSerialize(admitted) !== stableSerialize(matches[0].suggested)) {
+      throw new Error(
+        `Bootstrap Manifest entry ${entryId}: admitted value does not match the suggestion named by `
+        + 'selectedRefinementCandidateDigest',
+      );
+    }
   }
 
   const entries = manifest.entries.map((entry): BootstrapManifestEntry => {
@@ -670,6 +730,12 @@ export function decideBootstrapManifestEntry(
         ? {}
         : { suggestedRefinements: structuredClone(entry.suggestedRefinements) }),
       ...(decision === 'edited' && admitted !== undefined ? { admitted: structuredClone(admitted) } : {}),
+      // Rebuilt fresh from this call's own inputs, exactly like admitted above -- never carried
+      // over from the entry being replaced. Omitting the parameter (every existing call shape,
+      // including ordinary manual EDIT) clears it.
+      ...(decision === 'edited' && selectedRefinementCandidateDigest !== undefined
+        ? { selectedRefinementCandidateDigest }
+        : {}),
     };
   });
 
@@ -849,6 +915,24 @@ export function validateBootstrapManifestStructure(manifest: BootstrapManifest):
       }
     } else if (entry.admitted !== undefined) {
       throw new Error(`Malformed Bootstrap Manifest entry carries an unauthorized admitted value: ${entry.id}`);
+    }
+    if (entry.selectedRefinementCandidateDigest !== undefined) {
+      if (entry.decision !== 'edited') {
+        throw new Error(`Malformed Bootstrap Manifest: entry ${entry.id} carries a selectedRefinementCandidateDigest without decision 'edited'`);
+      }
+      if (entry.refinementProvenance !== undefined) {
+        throw new Error(`Malformed Bootstrap Manifest: entry ${entry.id} originated as a B4 AI addition and can never carry a selectedRefinementCandidateDigest`);
+      }
+      const matches = matchingSuggestions(entry, entry.selectedRefinementCandidateDigest);
+      if (matches.length !== 1) {
+        throw new Error(
+          `Malformed Bootstrap Manifest: entry ${entry.id} selectedRefinementCandidateDigest must name exactly `
+          + `one attached suggestion (found ${matches.length})`,
+        );
+      }
+      if (stableSerialize(entry.admitted) !== stableSerialize(matches[0].suggested)) {
+        throw new Error(`Malformed Bootstrap Manifest: entry ${entry.id} admitted value does not match the selected suggestion`);
+      }
     }
   }
 
