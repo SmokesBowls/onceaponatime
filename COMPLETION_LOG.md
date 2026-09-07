@@ -486,8 +486,50 @@ Closed as its own small slice before B4c2's contract, mirroring the B4a hardenin
   avoid, and confirmed no new derivation logic anywhere. No findings.
 - Verified: full `npm test`, `tsc --noEmit`, production build, and `git diff --check` all pass.
 
-**Committed at `c50ce9e`; not yet pushed to `origin/main`.**
+**Pushed to `origin/main`** (at `c50ce9e`).
 
-**Not yet done:** B4c2 (render AI additions/suggestions -- contract draft exists, awaiting re-check
-against this now-complete manifest shape before freezing), B4c3 (suggestion selection, undesigned),
-B4d (End-to-End Authority Proof). See `TODO.md`.
+## B4c2 -- render AI additions/suggestions in review
+
+Re-checked against the now-complete manifest shape (`BootstrapSuggestedRefinement.evidence` landed
+above) before freezing, per instruction. Its one real blocker was already resolved; nothing else
+outstanding.
+
+- Frozen (`85c4021`) with four explicit details pinned before RED: evidence labels preserve
+  epistemic origin ("Original proposal"/"Original source evidence"/"B2 discovery rationale/
+  confidence" for a deterministic entry; "Suggested values"/"AI supporting evidence"/"Refinement
+  provenance" for its suggestions, own container, never visually merged with the entry's own
+  blocks); an AI-added entry never renders a generic "confidence unavailable" placeholder for its
+  absent `discoveryConfidence` -- that field is intentionally inapplicable, not a detector gap; a
+  new frozen RED point requiring B4c2 be strictly projection-only (rendering never mutates the
+  manifest or any entry field, asserted by reference/deep-equality before and after a render pass);
+  and the pre-existing hardcoded `"Pending author review"` badge quirk stays explicitly out of this
+  slice, logged separately rather than fixed as a drive-by.
+- RED (`4809f08`) froze `tests/bootstrapStructuralReviewRefinementPresentation.test.tsx` against all
+  12 points. `StructuralReviewPanel` is a pure, stateless function of `(manifest, onClose)`, so
+  eleven of the twelve points test it directly via `react-test-renderer` with no `StoryEditor`/
+  `BootstrapReviewWorkspace` tree at all; only the "APPROVE still decides the real entry" case
+  exercises the real, unchanged decision path. Genuinely red behaviorally (no missing-module
+  placeholder) with `tsc --noEmit` clean, since neither component needed a new prop.
+- GREEN (`2ac1c7f`) touches exactly one file, `StructuralReviewPanel.tsx` -- no
+  `BootstrapReviewWorkspace.tsx`, no `StoryEditor.tsx`, no manifest schema change. Passed all 12 RED
+  points on the first real run.
+- A fresh, independent adversarial review, asked specifically to attack visual/semantic origin
+  confusion, evidence leakage, misplacement, and any interactive affordance sneaking into an
+  AI-related block, found the confidence-fallback branch structurally unreachable for an AI-added
+  entry (verified even against a hand-built manifest violating B4b's own mutual-exclusivity
+  guarantee), evidence genuinely non-leaking across both blocks, suggestions correctly scoped to
+  their exact target entry, and zero interactive elements anywhere outside the pre-existing CLOSE
+  REVIEW button. It found and this same commit fixed two real, low-severity gaps: a shared
+  provenance component rendered the identical "Refinement provenance" heading for both an AI-added
+  entry's own provenance and a suggestion's, contradicting the frozen contract's two distinct label
+  texts (fixed by parametrizing the heading); and the suggestions container guarded only on
+  `!== undefined`, not non-empty, so a hand-built manifest with an empty array (never produced by
+  the real merge path) would render an empty "AI suggestions" heading with nothing beneath it
+  (fixed with an explicit `.length > 0` guard). Neither was a data leak, mutation, or interactivity
+  issue.
+- Verified: full `npm test`, `tsc --noEmit`, production build, and `git diff --check` all pass.
+
+**Committed at `2ac1c7f`; not yet pushed to `origin/main`.**
+
+**Not yet done:** B4c3 (suggestion selection, undesigned), B4d (End-to-End Authority Proof). See
+`TODO.md`.
