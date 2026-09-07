@@ -20,7 +20,7 @@ B3c — Author Decisions + Explicit Assignments  ✅ done, pushed (1a93177)
         ↓
 B3d — Atomic Canonical Admission  ✅ done, not yet pushed (14d86e2)
         ↓
-B4 — Optional AI Refinement  ← split into B4a/B4b/B4c/B4d; B4a ✅ done, pushed (ded2db7); B4a hardening ✅ done, pushed (3ab5357); B4b ✅ done, pushed (de787b0); B4c1 ✅ done, pushed (fbf06ec); B4b suggestion-evidence hardening ✅ done, pushed (c50ce9e); B4c2 ✅ done, pushed (2ac1c7f); B4c3 contract + RED frozen (5c81f55), GREEN not yet implemented; B4d not started
+B4 — Optional AI Refinement  ← split into B4a/B4b/B4c/B4d; B4a ✅ done, pushed (ded2db7); B4a hardening ✅ done, pushed (3ab5357); B4b ✅ done, pushed (de787b0); B4c1 ✅ done, pushed (fbf06ec); B4b suggestion-evidence hardening ✅ done, pushed (c50ce9e); B4c2 ✅ done, pushed (2ac1c7f); B4c3 ✅ done, not yet pushed (463e9d0); B4d not started
 ```
 
 ### B2 — Deterministic Bootstrap Discovery ✅ shipped
@@ -1976,7 +1976,7 @@ from this freeze: no B4c2 production implementation is authorized by this contra
 remains explicitly undesigned -- not unblocked by this freeze.
 
 
-##### B4c3 — explicit author selection of a suggested edit  ← contract + RED frozen (5c81f55); GREEN not yet implemented
+##### B4c3 — explicit author selection of a suggested edit  ✅ shipped (contract fce0df9, RED 5c81f55, GREEN c8ed87d, adversarial-review fixes 463e9d0)
 
 Drafted after inspecting the exact current surfaces (not the master B4 draft's speculative prose):
 `BootstrapDecision`, `decideBootstrapManifestEntry()`, `decideBootstrapReviewEntry()`,

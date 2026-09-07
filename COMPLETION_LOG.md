@@ -529,7 +529,68 @@ outstanding.
   issue.
 - Verified: full `npm test`, `tsc --noEmit`, production build, and `git diff --check` all pass.
 
-**Committed at `2ac1c7f`; not yet pushed to `origin/main`.**
+**Committed at `2ac1c7f`; pushed to `origin/main`.**
 
-**Not yet done:** B4c3 (suggestion selection, undesigned), B4d (End-to-End Authority Proof). See
-`TODO.md`.
+**Not yet done at the time:** B4c3 (suggestion selection, undesigned), B4d (End-to-End Authority
+Proof). See `TODO.md`.
+
+## B4c3 -- explicit author selection of a suggested edit
+
+Drafted from a real-surfaces-only inspection (no implementation until the contract was reviewed
+and frozen), then settled across two review passes: the mechanism itself (`decision = 'edited'`,
+`admitted = suggestion.suggested`, plus one new orthogonal `selectedRefinementCandidateDigest`
+field) needed zero changes to `resolveAdmittedBootstrapProposal()`, `prepareBootstrap()`, or
+`decideBootstrapReviewEntry()`'s assignment-clearing logic; fingerprint scope (pure review state,
+excluded from both `entriesFingerprint` and `fingerprintBootstrapAdmission()`, no new
+`reviewStateFingerprint` invented); UI placement (`StructuralReviewPanel.tsx` stays permanently
+read-only, `BootstrapReviewWorkspace.tsx` gains the compact selection control); and a tightened
+controller boundary (`entry.refinementProvenance === undefined` added to the validity iff rule so
+a suggestion can only ever be selected against a genuine deterministic/B2 baseline entry, enforced
+at B4c3's own boundary rather than merely inherited from B4a/B4b construction; exact-one-match
+counting replacing first-match resolution, so a duplicated `candidateDigest` fails closed).
+
+- Frozen (`fce0df9`) with the full authority-semantics/fingerprint-scope/placement/controller-
+  boundary contract pinned, including the explicit iff rule for
+  `selectedRefinementCandidateDigest` and a 15-point RED gate sketch.
+- RED (`5c81f55`, roadmap synced `fab965e`) froze two new files:
+  `tests/bootstrapReviewSuggestionSelection.test.ts` (pure decision/identity/authority logic,
+  gate items 1-9, 12-14) and `tests/bootstrapReviewWorkspaceSuggestionSelection.test.tsx` (UI
+  presentation, gate items 10, 11, 15). Genuinely red via missing-module `SyntaxError` in both,
+  confirmed via `tsc --noEmit` that every resulting error traced only to the frozen contract's new
+  surface. Two RED-fixture bugs were found and fixed pre-GREEN and during GREEN respectively,
+  each disclosed in its own commit (`f60d719`, `a518ae5`) rather than folded silently into a later
+  commit.
+- GREEN (`c8ed87d`) touches `bootstrapManifest.ts` (`selectedRefinementCandidateDigest` field,
+  extended `decideBootstrapManifestEntry()` signature, independent `validateBootstrapManifestStructure()`
+  re-derivation, a shared `matchingSuggestions()` helper so the two enforcement points cannot
+  drift), `bootstrapReview.ts` (new `selectBootstrapReviewSuggestion()` controller, with its own
+  independent `refinementProvenance`/exact-one-match/kind/id checks -- never trusting a
+  caller-supplied proposal+digest pair), `BootstrapReviewWorkspace.tsx` (the new required
+  `onSelectSuggestion` prop and a compact per-suggestion row whose marker is derived purely from
+  manifest state), and `StoryEditor.tsx` (wiring, mirroring the existing `isStale`/`isRefining`
+  defense in depth). `StructuralReviewPanel.tsx` is untouched, exactly as frozen. Passed both RED
+  gates on the first real run; one already-shipped B4c2 test needed a no-op prop added to keep
+  compiling against the new required prop (mechanical ripple, no assertion changed).
+- A fresh, independent adversarial review, asked specifically to attack authority bypass,
+  entry-scoping bypass, the `refinementProvenance` guard, the exact-one-match guard,
+  `stableSerialize()`-as-deep-equality edge cases, fingerprint/identity leakage, UI authority
+  leakage, and the `prepareBootstrap()`/`BootstrapReceiptEntry` boundary, found **no production
+  authority bypass** -- every claimed guard holds independently at every claimed enforcement
+  point. It found and this session fixed two real test-integrity gaps: one RED assertion's
+  hand-built fixture still carried a mismatched proposal `id`, so an unrelated defense-in-depth
+  check (not the guard the test's own comment claimed) was positioned to catch it first (fixed by
+  matching `id` too, then verified by temporarily deleting the guard under test and confirming the
+  test still correctly fails closed via a legitimate, contract-required redundant check elsewhere
+  -- not dead code); and `validateBootstrapManifestStructure()` only rejected a duplicated
+  suggestion `candidateDigest` when a selection happened to be present, not unconditionally (fixed,
+  with a new assertion added for the previously-uncovered unselected case). One review claim was
+  checked by hand and found not to hold against the actual code (entry-scoping is proven correctly;
+  the exact-one-match check runs and throws before the kind check the claim pointed to ever
+  evaluates) -- not acted on, and the reasoning recorded in the fix commit (`463e9d0`) rather than
+  silently dropped.
+- Verified: full `npm test`, `tsc --noEmit`, production build, and `git diff --check` all pass,
+  both before and after the adversarial-review fixes.
+
+**Committed at `463e9d0`; not yet pushed to `origin/main`.**
+
+**Not yet done:** B4d (End-to-End Authority Proof). See `TODO.md`.
