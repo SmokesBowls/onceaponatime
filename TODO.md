@@ -20,7 +20,7 @@ B3c — Author Decisions + Explicit Assignments  ✅ done, pushed (1a93177)
         ↓
 B3d — Atomic Canonical Admission  ✅ done, not yet pushed (14d86e2)
         ↓
-B4 — Optional AI Refinement  ← split into B4a/B4b/B4c/B4d; B4a ✅ done, pushed (ded2db7); B4a hardening ✅ done, pushed (3ab5357); B4b ✅ done, pushed (de787b0); B4c1 ✅ done, pushed (fbf06ec); B4b suggestion-evidence hardening ✅ done, pushed (c50ce9e); B4c2 contract frozen, awaiting RED; B4c3/B4d not started
+B4 — Optional AI Refinement  ← split into B4a/B4b/B4c/B4d; B4a ✅ done, pushed (ded2db7); B4a hardening ✅ done, pushed (3ab5357); B4b ✅ done, pushed (de787b0); B4c1 ✅ done, pushed (fbf06ec); B4b suggestion-evidence hardening ✅ done, pushed (c50ce9e); B4c2 contract + RED frozen (4809f08), GREEN not yet implemented; B4c3/B4d not started
 ```
 
 ### B2 — Deterministic Bootstrap Discovery ✅ shipped
@@ -1810,7 +1810,7 @@ scoped above only at the paragraph level (not yet narrowed into exact files/prop
 explicitly undesigned -- neither is unblocked by this freeze.
 
 
-##### B4c2 — render AI additions/suggestions in review  ← contract frozen; awaiting RED
+##### B4c2 — render AI additions/suggestions in review  ← contract + RED frozen (4809f08); GREEN not yet implemented
 
 Drafted after reading `StructuralReviewPanel.tsx` in full (it is the only thing that renders
 per-entry proposal/evidence/discovery-rationale detail today, and is used from exactly one place --
