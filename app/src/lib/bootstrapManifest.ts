@@ -202,6 +202,8 @@ export interface BootstrapRefinementProvenance {
 /** One AI-suggested edit attached to an existing deterministic entry -- never a duplicate entry. */
 export interface BootstrapSuggestedRefinement {
   readonly suggested: BootstrapProposal;
+  /** The exact, re-validated citations this suggestion was made from -- never the target entry's own evidence. */
+  readonly evidence: readonly SourceEvidenceUnit[];
   readonly provenance: BootstrapRefinementProvenance;
 }
 
@@ -411,6 +413,7 @@ export function fingerprintEntrySources(
     ...(e.suggestedRefinements === undefined ? {} : {
       suggestedRefinements: e.suggestedRefinements.map((s) => ({
         suggested: s.suggested,
+        evidence: s.evidence,
         candidateDigest: s.provenance.candidateDigest,
       })),
     }),
@@ -677,6 +680,38 @@ export function decideBootstrapManifestEntry(
 // Structural validation
 // ---------------------------------------------------------------------------
 
+/**
+ * Shared per-unit evidence validation, used identically for an entry's own
+ * evidence and a suggestedRefinement's evidence -- the same closed rules
+ * (bound document, exact offset/text match, non-empty) apply to both; only
+ * the error-message label differs.
+ */
+function assertValidEvidence(
+  label: string,
+  evidence: unknown,
+  boundSourceDocuments: readonly AuthorSourceDocument[],
+  boundDocIds: ReadonlySet<string>,
+): asserts evidence is readonly SourceEvidenceUnit[] {
+  if (!Array.isArray(evidence) || evidence.length === 0) {
+    throw new Error(`Malformed Bootstrap Manifest: ${label} must cite at least one evidence unit`);
+  }
+  for (const unit of evidence) {
+    if (!isSourceEvidenceUnit(unit)) {
+      throw new Error(`Malformed Bootstrap Manifest evidence unit on ${label}`);
+    }
+    if (!boundDocIds.has(unit.sourceDocumentId)) {
+      throw new Error(`Malformed Bootstrap Manifest: ${label} cites evidence from an unbound source document ${unit.sourceDocumentId}`);
+    }
+    const sourceDoc = boundSourceDocuments.find((doc) => doc.id === unit.sourceDocumentId);
+    const actualSlice = sourceDoc?.exactText.slice(unit.startOffset, unit.endOffset);
+    if (actualSlice !== unit.exactText) {
+      throw new Error(
+        `Malformed Bootstrap Manifest: ${label} evidence exactText does not match the bound source document at [${unit.startOffset}, ${unit.endOffset})`,
+      );
+    }
+  }
+}
+
 export function validateBootstrapManifestStructure(manifest: BootstrapManifest): void {
   if (!manifest.id || !manifest.projectId) {
     throw new Error('Malformed Bootstrap Manifest identity');
@@ -741,26 +776,7 @@ export function validateBootstrapManifestStructure(manifest: BootstrapManifest):
     if (entry.supportedForApplication !== SUPPORTED_BOOTSTRAP_PROPOSAL_KINDS.has(entry.kind)) {
       throw new Error(`Malformed Bootstrap Manifest application support: ${entry.id}`);
     }
-    if (!Array.isArray(entry.evidence) || entry.evidence.length === 0) {
-      throw new Error(`Malformed Bootstrap Manifest: entry ${entry.id} must cite at least one evidence unit`);
-    }
-    for (const unit of entry.evidence) {
-      if (!isSourceEvidenceUnit(unit)) {
-        throw new Error(`Malformed Bootstrap Manifest evidence unit on entry ${entry.id}`);
-      }
-      if (!boundDocIds.has(unit.sourceDocumentId)) {
-        throw new Error(
-          `Malformed Bootstrap Manifest: entry ${entry.id} cites evidence from an unbound source document ${unit.sourceDocumentId}`,
-        );
-      }
-      const sourceDoc = manifest.boundSourceDocuments.find((doc) => doc.id === unit.sourceDocumentId);
-      const actualSlice = sourceDoc?.exactText.slice(unit.startOffset, unit.endOffset);
-      if (actualSlice !== unit.exactText) {
-        throw new Error(
-          `Malformed Bootstrap Manifest: entry ${entry.id} evidence exactText does not match the bound source document at [${unit.startOffset}, ${unit.endOffset})`,
-        );
-      }
-    }
+    assertValidEvidence(`entry ${entry.id}`, entry.evidence, manifest.boundSourceDocuments, boundDocIds);
     if (entry.discoveryConfidence !== undefined) {
       const confidence = entry.discoveryConfidence;
       if (!isRecord(confidence)) {
@@ -813,6 +829,7 @@ export function validateBootstrapManifestStructure(manifest: BootstrapManifest):
         if (!isRecord(suggestion) || !isProposalForKind(entry.kind, suggestion.suggested)) {
           throw new Error(`Malformed Bootstrap Manifest suggestedRefinement on entry ${entry.id}`);
         }
+        assertValidEvidence(`suggestedRefinement on entry ${entry.id}`, suggestion.evidence, manifest.boundSourceDocuments, boundDocIds);
         const provenance = suggestion.provenance;
         if (
           !isRecord(provenance)

@@ -130,11 +130,14 @@ export function mergeBootstrapRefinementArtifact(
   }
 
   const suggestionsByTargetId = new Map<string, BootstrapSuggestedRefinement[]>();
-  for (const { candidate } of revalidated) {
+  for (const { candidate, evidence } of revalidated) {
     if (candidate.refinesEntryId === null) continue;
     const targetOriginal = baseline.entries.find((entry) => entry.id === candidate.refinesEntryId)!;
     const suggestion: BootstrapSuggestedRefinement = {
       suggested: buildProposalFromCandidate(candidate, requireEntityProposalId(targetOriginal.proposed)),
+      // The already re-validated evidence for this exact candidate (see the revalidated array
+      // above) -- never the target entry's own evidence, and never re-derived here.
+      evidence,
       provenance: { candidateDigest: candidate.candidateDigest, refinesBaselineEntryId: candidate.refinesEntryId },
     };
     const existing = suggestionsByTargetId.get(candidate.refinesEntryId) ?? [];
@@ -211,6 +214,7 @@ export function mergeBootstrapRefinementArtifact(
       ...(suggestedRefinements === undefined ? {} : {
         suggestedRefinements: suggestedRefinements.map((s) => ({
           suggested: s.suggested,
+          evidence: s.evidence,
           provenance: { candidateDigest: s.provenance.candidateDigest, refinesBaselineEntryId: id },
         })),
       }),
