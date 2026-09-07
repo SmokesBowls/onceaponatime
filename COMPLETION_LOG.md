@@ -392,7 +392,26 @@ log between B4a and B4b).
   control-byte corruption in any touched file (checked byte-for-byte after every edit -- the same
   authoring failure mode B4a hit, caught immediately each time here).
 
-**Committed at `de787b0`; not yet pushed to `origin/main`.**
+**Pushed to `origin/main`** (at `de787b0`).
+
+## B4a hardening -- baseline structural validation
+
+Found while surveying real integration surfaces for B4c (where a baseline manifest first arrives as
+raw, potentially hostile browser JSON): `refineBootstrapManifest()` (shipped in B4a, `ded2db7`) never
+called `validateBootstrapManifestStructure(baseline)` itself. Every B4a RED fixture was already
+structurally valid by construction, so nothing caught it -- but an authority boundary must never
+assume its caller handed it a valid manifest.
+
+- RED (`71c5aed`): `tests/bootstrapRefinementBaselineValidation.test.ts` -- a structurally malformed
+  baseline (tampered evidence `exactText`) must reject before the provider is ever invoked (call count
+  0); a baseline that is both malformed *and* ineligible (a decided entry) must fail on structural
+  validation first, proving check ordering; a genuinely valid baseline still reaches the provider
+  exactly once. Genuinely red: the malformed case reached the provider once instead of zero times.
+- GREEN (`b24d806`): adds `validateBootstrapManifestStructure(baseline)` as the function's first check,
+  before `isBootstrapRefinementEligible()` and before the provider is ever touched.
+- Verified: full `npm test`, `tsc --noEmit`, production build, and `git diff --check` all pass.
+
+**Committed at `b24d806`; not yet pushed to `origin/main`.**
 
 **Not yet done:** B4c (Optional Refinement UI + Lifecycle), B4d (End-to-End Authority Proof). See
 `TODO.md`.
