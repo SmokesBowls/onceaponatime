@@ -388,10 +388,15 @@ function testSelectionOnAiAddedEntryRejectsEverywhere() {
   // would, so the rejection can only come from the refinementProvenance
   // guard, not from some unrelated malformation.
   const borrowedSuggestion = targetEntry.suggestedRefinements![0];
+  // Kind-matched to additionEntry (not borrowedSuggestion's original kind) on
+  // every use below -- otherwise the pre-existing, unrelated kind-mismatch
+  // check would trip first and the assertions would no longer prove the
+  // refinementProvenance guard specifically.
+  const kindMatchedSuggested = { ...borrowedSuggestion.suggested, kind: additionEntry.kind } as BootstrapProposal;
   const handBuilt = withTamperedEntry(combined, additionEntry.id, {
     suggestedRefinements: [{
       ...borrowedSuggestion,
-      suggested: { ...borrowedSuggestion.suggested, kind: additionEntry.kind } as BootstrapProposal,
+      suggested: kindMatchedSuggested,
       provenance: { ...borrowedSuggestion.provenance, refinesBaselineEntryId: additionEntry.id },
     }],
   });
@@ -405,7 +410,7 @@ function testSelectionOnAiAddedEntryRejectsEverywhere() {
       handBuilt,
       additionEntry.id,
       'edited',
-      borrowedSuggestion.suggested,
+      kindMatchedSuggested,
       borrowedSuggestion.provenance.candidateDigest,
     ),
     'decideBootstrapManifestEntry must independently refuse the same thing',
@@ -413,7 +418,7 @@ function testSelectionOnAiAddedEntryRejectsEverywhere() {
 
   const forciblyDecided = withTamperedEntry(handBuilt, additionEntry.id, {
     decision: 'edited',
-    admitted: borrowedSuggestion.suggested,
+    admitted: kindMatchedSuggested,
     selectedRefinementCandidateDigest: borrowedSuggestion.provenance.candidateDigest,
   });
   assert.throws(
