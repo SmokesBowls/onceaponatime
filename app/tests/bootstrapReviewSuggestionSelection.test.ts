@@ -509,10 +509,15 @@ function testManifestIdentityUnaffectedByAnyNumberOfDecisions() {
 }
 
 // ---------------------------------------------------------------------------
-// 14. prepareBootstrap()/BootstrapReceiptEntry are untouched by this slice.
+// 14. prepareBootstrap()/BootstrapReceiptEntry carry exactly the closed,
+// additive B4d field set -- updated from this file's original B4c3-era
+// assertion (which deliberately pinned the pre-B4d absence, commented
+// "that is B4d's job") now that B4d has shipped that exact projection.
+// Still guards against uncontrolled scope creep: the field set stays
+// closed, just one field wider than before.
 // ---------------------------------------------------------------------------
 
-function testPrepareBootstrapAndReceiptEntryCarryNoNewField() {
+function testPrepareBootstrapAndReceiptEntryCarryExactlyTheClosedB4dFieldSet() {
   const { combined, targetEntry, digestA } = combinedFixture();
   const suggestionA = targetEntry.suggestedRefinements!.find((s) => s.provenance.candidateDigest === digestA)!;
 
@@ -539,14 +544,19 @@ function testPrepareBootstrapAndReceiptEntryCarryNoNewField() {
 
   assert.deepEqual(
     Object.keys(receiptEntry).sort(),
-    (['entryId', 'kind', 'decision', 'supportedForApplication', 'proposed', 'admitted', 'applied'] as const).slice().sort(),
-    'BootstrapReceiptEntry must carry no new selection-provenance field -- that is B4d\'s job',
+    ([
+      'entryId', 'kind', 'decision', 'supportedForApplication', 'proposed', 'admitted', 'applied',
+      'selectedRefinementCandidateDigest',
+    ] as const).slice().sort(),
+    'BootstrapReceiptEntry must carry exactly the pre-B4d fields plus B4d\'s own additive selection-provenance field -- no more',
   );
   assert.deepEqual(receiptEntry.admitted, suggestionA.suggested, 'the receipt must still faithfully admit the selected value itself');
 
-  // Type-level proof this file compiles against the real, unexpanded shape.
+  // Type-level proof this file compiles against the real, B4d-expanded shape.
   const typedEntry: BootstrapReceiptEntry = receiptEntry;
-  assert.equal('selectedRefinementCandidateDigest' in typedEntry, false);
+  assert.equal('selectedRefinementCandidateDigest' in typedEntry, true);
+  assert.equal(typedEntry.selectedRefinementCandidateDigest, digestA, 'the receipt must carry the exact digest that was selected');
+  assert.equal('refinementProvenance' in typedEntry, false, 'a selection-decided entry never originated as a B4 AI addition itself');
 }
 
 function run() {
@@ -561,7 +571,7 @@ function run() {
   testDuplicateDigestOnSameEntryFailsClosed();
   testAdmissionFingerprintIgnoresSelectionProvenance();
   testManifestIdentityUnaffectedByAnyNumberOfDecisions();
-  testPrepareBootstrapAndReceiptEntryCarryNoNewField();
+  testPrepareBootstrapAndReceiptEntryCarryExactlyTheClosedB4dFieldSet();
   console.log('B4c3 suggestion selection authority/identity contract regression passed');
 }
 

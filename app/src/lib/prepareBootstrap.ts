@@ -13,6 +13,7 @@ import {
   type BootstrapManifestEntry,
   type BootstrapProposal,
   type BootstrapProposalKind,
+  type BootstrapRefinementProvenance,
 } from './bootstrapManifest';
 
 type EntityKind = 'actor' | 'object' | 'location' | 'faction';
@@ -36,6 +37,10 @@ export interface BootstrapReceiptEntry {
   readonly proposed: BootstrapProposal;
   readonly admitted: BootstrapProposal | null;
   readonly applied: boolean;
+  /** Present only when the entry itself originated as a B4 AI addition -- copied verbatim, never reconstructed. */
+  readonly refinementProvenance?: BootstrapRefinementProvenance;
+  /** Present only when the entry's admitted value was explicitly selected from an attached AI suggestion. */
+  readonly selectedRefinementCandidateDigest?: string;
 }
 
 export interface BootstrapReceipt {
@@ -573,6 +578,13 @@ export function prepareBootstrap(
     proposed: structuredClone(entry.proposed),
     admitted: admittedByEntry.has(entry.id) ? structuredClone(admittedByEntry.get(entry.id)!) : null,
     applied: appliedEntryIds.includes(entry.id),
+    // B4d: copied straight through from the decided manifest entry, never
+    // inferred or recomputed -- decision outcome does not alter origin
+    // provenance (a rejected AI-added entry still carries
+    // refinementProvenance). Omitted entirely when absent, exactly like
+    // every other optional field above.
+    ...(entry.refinementProvenance === undefined ? {} : { refinementProvenance: structuredClone(entry.refinementProvenance) }),
+    ...(entry.selectedRefinementCandidateDigest === undefined ? {} : { selectedRefinementCandidateDigest: entry.selectedRefinementCandidateDigest }),
   }));
 
   const bootstrapReceipt: BootstrapReceipt = deepFreeze({
