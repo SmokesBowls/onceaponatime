@@ -24,6 +24,37 @@ No RED test exists because of this document. No kernel code exists because of th
 MrLore file was changed to produce this document. No Onceaponatime application/library/schema/
 test/UI file was changed to produce this document.
 
+## Hardening pass (this revision)
+
+This revision resolves seven contradictions found in the D1–D12 decisions above before they could
+become a frozen RED contract. None required new evidence beyond re-reading the same files more
+carefully; none reverses a decision's underlying reasoning. Summary (full detail inline in each
+D-section and in the final report to the user):
+
+1. **D3 repaired** — the FNV family stays a diagnostic/self-consistency fingerprint only; it is
+   never the sole proof that two kernel records are the same record. A collision-resistant *or*
+   fully-verified structural identity is now required wherever a collision would silently merge two
+   different records. See D3 below.
+2. **D3/D4/D5 repaired, one renamed** — `IdentitySymbol` is renamed `IdentityCandidate` throughout
+   and redefined to remove the contradiction between "kernel mints an incrementing symbol id" and
+   "G1A–C are pure, non-mutating, zero-persistence, deterministic." An `IdentityCandidate`'s id is
+   now itself content-derived, like every other G1A–C artifact; "accepted symbol" is entirely a
+   consumer concept the kernel never holds. See D3 and D5 below.
+3. **New explicit split** — "eventual kernel architecture" (six types, unchanged) versus "first
+   frozen G1A–C slice" (four: `SourceDocument`, `EvidenceSpan`, `Observation`, `IdentityCandidate`,
+   plus pure identity-resolution/merge/split projections) is now stated explicitly, with
+   `ScopedStateAssertion` and `DecisionRecord`/`AdmissionReceiptRecord` moved out of the first slice.
+   See "Eventual kernel architecture vs. first G1A–C slice" below.
+4. **D12 renamed** — `translateKernelProposalsToBootstrapDiscoveryPayload()` is replaced by a
+   provisional name that does not grant the kernel a "proposal" concept; see D12 below.
+5. **D6 repaired** — the reserved-fieldname blacklist is replaced by a closed-schema-first rule;
+   the blacklist is dropped rather than merely supplemented. See D6 below.
+6. **D1 clarified** — physical incubation inside the Onceaponatime repository is restated as
+   carrying no semantic dependency; the kernel package imports nothing Onceaponatime-specific. See
+   D1 below.
+7. **D2 clarified, not changed** — UTF-16 offsets are restated as a TypeScript-representation
+   choice, not a claim of universal/language-neutral coordinate semantics. See D2 below.
+
 ## Correction to the task framing before proceeding
 
 The task instructed reading D1–D12 out of `POST_B4_LORE_EVIDENCE_KERNEL_DIRECTION.md`. On
@@ -127,6 +158,31 @@ testable static-reachability check exactly like B2/B3/B4's existing reachable-im
 registry/publish process; any EngAIn-side consumption mechanism; automated cross-repo version-drift
 detection.
 
+**Clarification (hardening pass):** physical incubation inside the Onceaponatime repository must
+not be read as, or drift into, semantic ownership. Restating the direction document's own table
+("Onceaponatime: authority consumer, not kernel owner") as a structural rule, not merely a stated
+intention:
+
+```text
+kernel package
+    imports nothing from app/src or app/server; contains zero references to StoryProject,
+    BootstrapProposal, actor_proposal/object_proposal/etc., or any other Onceaponatime-specific
+    concept, by name or by shape
+
+Onceaponatime adapter (a new, separate file, per D12)
+    may import from the kernel package
+
+Onceaponatime authority (decisions, admission, canonical StoryProject mutation)
+    never lives inside, or depends on, the kernel package
+```
+
+This is verified the same way B2/B3/B4's existing reachable-import-graph tests already verify
+comparable one-directional boundaries — a static scan of the kernel package's own source proving it
+never imports anything under `app/`. Physical co-location inside one repository is a deployment
+convenience (D1's own decision); it creates no dependency in the forbidden direction, and the frozen
+G1 contract must include this reachable-import-graph check as one of its own structural guarantees,
+not merely as adapter-side hygiene.
+
 ---
 
 ## D2 — Source bytes and coordinate semantics
@@ -180,12 +236,31 @@ to near-relabeling for this part of the translation.
 policy beyond "the text is a JS string, already decoded" (no consumer today hands the kernel raw
 bytes).
 
+**Clarification (hardening pass, not a change):** UTF-16 code-unit offsets are part of **this G1
+implementation's TypeScript representation** because TypeScript/JavaScript is the first (and, for
+this increment, only) kernel implementation language and its native `string` type already uses
+UTF-16 code units — this is not a claim that UTF-16 is a universal or language-neutral literary
+coordinate system. A future non-JS adapter (e.g. a Python-hosted consumer) is responsible for
+converting its own native coordinate system into the kernel's declared UTF-16 convention before
+calling the kernel, or a later, separately versioned contract may generalize the coordinate
+representation (e.g. an explicit, declared coordinate unit per `SourceDocument`) if a real non-JS
+consumer ever needs it — not decided or assumed here. The four invariants this decision protects
+remain exactly as stated, restated together for clarity:
+
+```text
+same text + different offsets in one document  = different EvidenceSpans
+same text + different documents                = different EvidenceSpans
+edited/changed bound source                    = stale evidence (fails closed)
+a copied quote alone, without coordinates       = insufficient identity, never accepted
+```
+
 ---
 
 ## D3 — Identifiers, serialization, and fingerprints
 
 **Question:** how are ids minted, how is content serialized/fingerprinted, and how are the five
-distinct identity concepts (artifact/content/source/proposal/consumer-admission) kept separate?
+distinct identity concepts (diagnostic fingerprint/artifact identity/source binding/proposal
+identity/consumer-admission identity) kept separate?
 
 **Evidence — Onceaponatime:** a complete, working, four-slices-of-adversarial-review-hardened
 scheme already exists in `bootstrapManifest.ts`: `stableSerialize()` (sorted object keys,
@@ -207,31 +282,107 @@ order-dependent unless the registrar enforces strict determinism (not evidenced)
 counter-minted entity ids are a reasonable *display* convention but not a safe content-identity
 algorithm to import into the kernel core.
 
-**Decision:** G1 reuses Onceaponatime's `stableSerialize()`/`fingerprintString()`/`deepFreeze()`
-family directly (documented explicitly as a tamper/self-consistency marker, not a collision-
-resistance claim — G1 must not silently upgrade that claim later). Content-derived ids
-(`sourceDocumentId`+coordinates → `EvidenceSpan` id; hash of kind+cited-spans+subject/object
-candidates → `Observation` id) are used everywhere identity *can* be content-derived.
-`IdentitySymbol` ids are the one legitimate exception — an accepted symbol has no natural content
-until something names it — and are minted per-project (namespaced, e.g. `project:<id>:symbol:<n>`),
-never globally, never colliding across projects. The five distinct identity concepts the blueprint
-requires are kept explicitly separate: **artifact identity** (an `Observation`'s own id) ≠
-**content fingerprint** (hash of its fields) ≠ **source fingerprint** (hash of the bound
-`SourceDocument` set) ≠ **proposal identity** (owned entirely by the consumer's own adapter/
-manifest, e.g. Onceaponatime's `BootstrapManifestEntry.id` — the kernel never mints this) ≠
-**consumer admission identity** (owned entirely by the consumer's own receipt id scheme, e.g.
-`bootstrap-receipt:<manifestId>:<admissionFingerprint>`).
+**Decision — repaired (hardening pass).** The original decision let a short, explicitly
+non-collision-resistant FNV-1a fingerprint stand in for artifact identity in some places, and
+separately proposed a kernel-minted incrementing `IdentitySymbol` id — both were contradictions
+this pass closes.
 
-**Why:** don't re-derive a scheme four B-series slices already hardened; MrLore's counter ids are
-evidence of a weaker pattern, not a better one.
+*Fingerprint versus identity, made explicit.* Onceaponatime's own `bootstrapManifest.ts` comment
+already concedes the FNV-1a family is "a self-consistency/tamper marker... not a collision-resistant
+identity claim." G1 must act on that concession structurally, not merely repeat it as a caveat. Five
+distinct concepts, kept explicitly separate, restated in the corrected terms:
 
-**Consequences:** G1A's serialization/fingerprint module can be extracted near-verbatim
-(generalized field lists) from `bootstrapManifest.ts`, reducing new-code risk.
+```text
+1. diagnostic / self-consistency fingerprint   — the FNV-1a family, unchanged in mechanism
+2. deterministic artifact identity             — a kernel record's real identity (below)
+3. source binding identity                     — which exact SourceDocument set something is
+                                                  bound to (sourceDocumentsAreIdentical()'s exact
+                                                  field-by-field comparison, reused verbatim,
+                                                  never the fingerprint alone)
+4. consumer proposal identity                  — owned entirely by the consumer's own adapter/
+                                                  manifest (e.g. BootstrapManifestEntry.id);
+                                                  the kernel never mints or interprets this
+5. consumer admission identity                 — owned entirely by the consumer's own receipt
+                                                  scheme (e.g. bootstrap-receipt:...); likewise
+                                                  never kernel-owned
+```
 
-**Deferred:** upgrading to a real collision-resistant digest (e.g. SHA-256) — only relevant if
-G1E's persistence design later needs it; retry/idempotency-key mechanics, deferred to whichever
-slice (G1E) needs a durable write, using B4's `refinementSessionId`+ordinal+idempotency-key pattern
-as the template.
+(1) is retained as a cheap, non-authoritative diagnostic: a quick "did anything change" signal and
+an optional lookup-bucket key for an in-memory index. It is *never* sufficient, alone, to conclude
+two records are the same record, and no G1 code path may treat a fingerprint match as a merge/dedup/
+replace decision.
+
+(2), **deterministic artifact identity**, is the corrected core of D3: for every G1A–C record whose
+content *can* define it (`EvidenceSpan`, `Observation`, and — see the `IdentityCandidate` rework
+below — the renamed identity-clustering record), the record's real identity is **Option B**: a
+complete deterministic structural key whose equality is independently verifiable, not a compressed
+digest. Concretely, this is `stableSerialize()`'s own canonical output over the record's
+identity-defining fields, used directly as the identity key (not hashed down to 32 bits first).
+`stableSerialize()`'s existing guarantees (sorted object keys, JSON's own unambiguous structural
+delimiting of strings/arrays/objects, explicit non-finite-number rejection) already make this
+injective by construction: two different values can never produce the same canonical serialization,
+so two different `Observation`s or `EvidenceSpan`s can never collide on this key, full stop — there
+is no "short hash" step in the identity path at all. The existing FNV-1a fingerprint may still be
+computed *from* that same canonical serialization purely as a compact diagnostic/bucket key (per
+(1) above), but it is downstream of identity, never identity itself.
+
+**Explicit answer to "what happens if two different serialized observations produce the same short
+fingerprint?"** Nothing treats them as the same. Their `stableSerialize()`-based identity keys
+remain different (by construction, per the injectivity argument above), so they remain two distinct
+records under any correct implementation. The failure this decision actually forecloses is
+structural, not merely definitional: any G1 code that indexes records by their short diagnostic
+fingerprint (e.g. a hashmap used purely for lookup speed) must store a bucket of colliding
+candidates and re-check full `stableSerialize()` equality before returning a match — it may never
+return "found" on a bucket hit alone. This is a required structural test (see the revised proposed
+RED gate below), not merely a documented intention — mirroring how `sourceDocumentsAreIdentical()`
+already relates to `fingerprintSourceDocuments()` today: the fingerprint is a hint, the field-by-field
+comparison is the proof.
+
+*Collision-resistant digests, deferred correctly.* This decision does not select SHA-256 (or any
+other real cryptographic digest) now, and does not need to: G1A–C hold every record fully in memory
+(per D8), so full structural equality is always checkable directly — there is no scenario in the
+first frozen slice where two records must be compared *without* both being available to compare in
+full. A real collision-resistant digest only becomes necessary once a record must be identified
+*without* holding its full content for comparison — e.g. a future G1E persistence/index layer
+comparing a stored digest against an incoming record without reading the whole store first. That is
+explicitly named as a **required precondition G1E's own freeze must resolve**, not a permissively
+open deferral: G1E may not ship without deciding a real digest algorithm for exactly this purpose.
+
+**Decision — identity-layer minting (repaired together with D5/D12; renamed, see the hardening-pass
+summary above).** The prior "IdentitySymbol ids minted per-project via a kernel-owned incrementing
+counter" is withdrawn — it contradicted G1A–C's own purity/statelessness (D8) and conflated
+"identity candidate" with "accepted identity" (see the rewritten `IdentityCandidate` definition in
+D5 below). The renamed `IdentityCandidate`'s id is, like `Observation`'s, **content-derived** —
+`stableSerialize()` over its own defining fields (its detector origin, and the exact, sorted set of
+`Observation` ids it currently clusters) — recomputed identically given the same inputs, requiring
+no mutable registrar, no incrementing counter, and no persistence. A consumer's own stable,
+project-owned canonical id (e.g. Onceaponatime's `actor_001`, per `PROPOSAL.md`'s own "Stable
+Internal Identity" section — already exactly this pattern, already proven) is minted entirely by
+that consumer, never by the kernel, and is recorded — if at all — only inside that consumer's own
+`DecisionRecord` (D10), which the kernel stores opaquely without interpreting the mapping. A future,
+separately authorized registrar/persistence layer (G1D/E) may *additionally* mint a durable,
+human-friendly symbol id as a consumer-facing convenience alias layered on top of the content-derived
+identity (mirroring how MrLore's own `CHR-0001`-style ids are, per D3's original finding, a display
+convention layered over real evidence, never the identity mechanism itself) — but this is explicitly
+deferred, never assumed by G1A–C.
+
+**Why:** avoids introducing a new cryptographic dependency merely because one was named in this
+task (per instruction); reuses `stableSerialize()`'s already-proven injectivity property instead of
+inventing a new collision-resistance mechanism; and removes the one place (identity-symbol minting)
+where the prior design secretly required kernel-owned mutable state despite claiming purity
+elsewhere.
+
+**Consequences:** G1A's serialization/identity module still extracts near-verbatim from
+`bootstrapManifest.ts`'s `stableSerialize()`, but the frozen contract must now specify, per record
+type, exactly which fields are "identity-defining" (fed to the structural key) versus merely
+descriptive (excluded from it) — a new, concrete freeze-time requirement this correction surfaces
+that the original D3 answer did not need, since it never had a real identity key distinct from the
+fingerprint to define.
+
+**Deferred:** a real collision-resistant digest algorithm, required before G1E's own freeze (not an
+open-ended deferral, per above); retry/idempotency-key mechanics for a future durable write, using
+B4's `refinementSessionId`+ordinal+idempotency-key pattern as the template; a consumer-facing
+friendly-alias registrar layered over content-derived `IdentityCandidate` ids.
 
 ---
 
@@ -241,7 +392,8 @@ as the template.
 without polluting it?
 
 **Evidence:** the direction document's own six-concept candidate list
-(`SourceDocument`/`EvidenceSpan`/`Observation`/`IdentitySymbol`/`ScopedStateAssertion`/
+(`SourceDocument`/`EvidenceSpan`/`Observation`/`IdentityCandidate` [renamed from the direction
+document's own working name `IdentitySymbol`; see D5's hardening-pass repair]/`ScopedStateAssertion`/
 `DecisionRecord`+`AdmissionReceiptRecord`) is already sound against both codebases read this
 session. MrLore's `entity_type` enum (`character|faction|species|location|system|artifact|event|
 concept|group|relationship_label|unknown`, `ENTITY_STATE_SCHEMA.md`) is broader/more neutral than
@@ -258,7 +410,9 @@ Onceaponatime's proposal kinds are entirely project-specific and must stay in On
 adapter layer.
 
 **Decision:** the kernel's closed core is exactly the six candidate concepts, nothing else, as
-first-class kernel types. `Observation.kind` and `IdentitySymbol.type` are **open, namespaced
+first-class kernel types (though see the "Eventual kernel architecture vs. first G1A–C slice"
+section below — not all six ship in the first frozen implementation contract).
+`Observation.kind` and `IdentityCandidate.type` are **open, namespaced
 strings** (e.g. `"onceaponatime:actor_proposal"`), never a kernel-defined enum — the kernel core
 ships *zero* built-in kind/type values, only the shape of the field (non-empty namespaced string,
 or the literal `unknown`/absent sentinel, which is always legal and never blocks storage). This is
@@ -308,15 +462,19 @@ insufficient — a reusable, already-validated structural pattern, not a contest
    changed or removed). Nothing else; evidence is either an exact witness or it is not.
 2. **Observation lifecycle** — `proposed | superseded | retracted`. Never "approved" — approval is
    entirely a consumer concern, outside this axis.
-3. **IdentitySymbol resolution lifecycle** — `candidate | needs_review | merged | split |
+3. **`IdentityCandidate` resolution lifecycle** (renamed from the working name `IdentitySymbol` —
+   see the repaired definition immediately below) — `candidate | needs_review | merged | split |
    deprecated`, mirroring MrLore's registry `status` values (already neutral). Deliberately excludes
    anything like "approved"/"canon."
 4. **ScopedStateAssertion lifecycle** — `proposed | contradicted | superseded`. A contradiction
-   never deletes either assertion.
+   never deletes either assertion. (Banked eventual-architecture axis; `ScopedStateAssertion` itself
+   is not part of the first G1A–C slice — see below.)
 5. **Consumer decision lifecycle** — entirely consumer-owned and stored opaquely (Onceaponatime's
    own `pending|approved|edited|rejected` is unchanged, lives entirely in Onceaponatime's own
    layer, and the kernel never interprets it).
-6. **Consumer admission lifecycle** — likewise entirely consumer-owned, stored opaquely.
+6. **Consumer admission lifecycle** — likewise entirely consumer-owned, stored opaquely. (5 and 6
+   are banked eventual-architecture axes; `DecisionRecord`/`AdmissionReceiptRecord` are not part of
+   the first G1A–C slice — see below.)
 
 Required non-collapses (restated, now grounded in evidence rather than asserted): `observed != true`
 (Observation lifecycle never implies truth); `recurring != identical` (corroboration counts distinct
@@ -327,15 +485,73 @@ only a consumer's projection over admitted assertions produces one); `reviewed !
 distinction); `admitted by Onceaponatime != admitted by EngAIn` (two separate consumer-qualified
 records, D10).
 
-**Why:** both donor systems already independently learned this; regressing to one shared "status"
-field in G1 would be a step backward relative to both.
+**Repaired definition (hardening pass): `IdentityCandidate`, not `IdentitySymbol`.** The original
+draft used the direction document's own working name `IdentitySymbol` and, in D3, quietly gave it a
+kernel-minted incrementing id — implying acceptance/canonical status ("symbol" reads as an already-
+resolved referent) while also requiring hidden mutable registrar state that contradicts G1A–C's own
+purity/statelessness (D8). Both problems are fixed by one rename-plus-redefinition:
+
+```text
+Observation (immutable, source-traceable, never mutated by anything downstream)
+        ↓ a deterministic or model-assisted identity-resolution process groups Observations
+        ↓ it believes may refer to the same underlying referent
+
+IdentityCandidate
+    id:                     content-derived (stableSerialize() over detector origin + the exact,
+                             sorted set of member Observation ids) -- see D3's repaired identity
+                             model; never a kernel-minted counter, never mutable registrar state
+    type:                   open namespaced string, per D4 (unknown/unresolved always legal)
+    memberObservationIds:   the exact, immutable set of Observations grouped -- original
+                             Observations are never mutated, deleted, or made unaddressable by
+                             any later merge/split/resolution change
+    resolutionLifecycle:    candidate | needs_review | merged | split | deprecated -- NO
+                            "approved"/"accepted"/"canonical" state exists anywhere on this type
+
+merge(candidateA, candidateB, evidence) -> new IdentityCandidate
+    fresh, recomputed content-derived id (since membership changed); candidateA/candidateB are
+    marked merged, not deleted, and carry an explicit supersededBy pointer to the new id; every
+    original member Observation remains independently retrievable under its own unchanged id
+
+split(candidate, evidence) -> IdentityCandidate[]
+    same shape, reversed: candidate is marked split with supersededBy pointers to the new ids;
+    every original member Observation remains independently retrievable
+
+consumer acceptance (entirely outside the kernel)
+    Onceaponatime mints its OWN stable, project-owned canonical id (e.g. actor_001, per
+    PROPOSAL.md's own "Stable Internal Identity" section -- already exactly this pattern) and
+    MAY record, inside its own DecisionRecord (D10), a link such as
+    (consumerId: "onceaponatime", proposalIdentity: <IdentityCandidate.id>, acceptedAs: "actor_001")
+    -- the kernel stores this opaquely, without ever interpreting what "acceptedAs" means
+```
+
+"Candidate" was chosen over "Hypothesis"/"Cluster": it matches MrLore's own already-neutral registry
+vocabulary (`candidate` status value, `merge_candidate`, `split_candidate` in
+`REGISTRY_SYMBOL_TABLE_SCHEMA.md`) and Onceaponatime's own existing `candidate_types` fields
+(`ActorEntity`/`ObjectEntity`/etc. in `types.ts`) — both donor vocabularies already use exactly this
+word for "not yet decided," so it introduces no new terminology either side has to learn. "Symbol" is
+withdrawn because it reads as an already-resolved referent, which is precisely the acceptance claim
+the kernel must never make.
+
+A future, separately authorized registrar/persistence layer (G1D/E) may mint a durable,
+human-friendly alias id as a consumer-facing convenience layered on top of the content-derived
+`IdentityCandidate.id` (mirroring how MrLore's own `CHR-0001`-style ids are themselves a display
+convention over real evidence, never the identity mechanism) — explicitly deferred, not assumed by
+G1A–C.
+
+**Why:** both donor systems already independently learned the multi-axis lesson; regressing to one
+shared "status" field in G1 would be a step backward relative to both. The `IdentityCandidate`
+rename/redefinition removes a real internal contradiction (mutable kernel-owned minting state
+inside an otherwise-pure kernel) rather than merely renaming a word.
 
 **Consequences:** the structural validator needs one independent transition check per axis,
-mirroring `validateBootstrapManifestStructure()`'s per-field approach.
+mirroring `validateBootstrapManifestStructure()`'s per-field approach; every prior reference to
+`IdentitySymbol` elsewhere in this document is updated to `IdentityCandidate` for consistency
+(D3, D4, D6, D10, D12, the resulting boundary, and the proposed RED gate, below).
 
-**Deferred:** exact transition-legality tables (e.g., can a `merged` symbol return to `candidate`?)
-— settled fully at contract freeze (Gate G1-CONTRACT explicitly requires "state machines" as a
-package item), not sketched exhaustively here.
+**Deferred:** exact transition-legality tables (e.g., can a `merged` candidate return to
+`candidate`?) — settled fully at contract freeze (Gate G1-CONTRACT explicitly requires "state
+machines" as a package item), not sketched exhaustively here; the future friendly-alias registrar
+named above.
 
 ---
 
@@ -373,21 +589,55 @@ always attributed to a `detectorId`/`detectorVersion` (D9), never aggregated by 
 project-wide score; (c) **salience** — excluded from G1's closed core entirely, deferred to a later
 retrieval-ranking consumer (R1); (d) **authority** — never a kernel-computed field, full stop; it
 can only ever appear inside an opaque, consumer-supplied `DecisionRecord`/`AdmissionReceiptRecord`
-(D10). The structural validator must reject any core `Observation`/`IdentitySymbol`/
-`ScopedStateAssertion` record carrying a field literally named `authority`, `canonical`,
-`approved`, or `admitted` — those names are reserved for consumer-owned records only, a blunt
-defense-in-depth guard beyond "the kernel just doesn't compute it."
+(D10).
 
-**Why:** this is the single most safety-critical decision in the set — the direction document's own
-"Core laws" open with exactly `observation != identity` and `corroboration != authority` — and both
-donor systems demonstrate both the correct pattern and the named failure to avoid.
+**Repaired guard (hardening pass): closed-schema-first, not a word blacklist.** The original
+decision added a reserved-fieldname rejection list (`authority`/`canonical`/`approved`/`admitted`)
+as the structural enforcement mechanism. Reconsidered per instruction: if `Observation`/
+`IdentityCandidate`/`ScopedStateAssertion` schemas are genuinely closed (an exact, enumerated field
+set per record type, exactly like `validateBootstrapManifestStructure()`'s own exact-key-set
+discipline elsewhere in this codebase, and B4a's route-boundary exact-key-set check), then *any*
+unexpected top-level field — `authority`-named or not — already fails structural validation before
+the question of what to name a blacklist even arises. A word blacklist is fragile in a way a closed
+schema is not: it would not catch `auth`, `trust`, `isCanonical`, a translated-language key, or any
+other English near-miss, and it invites an ever-growing maintained exclusion list of exactly the
+kind D4 already rejected for kind/type vocabulary. The corrected rule:
 
-**Consequences:** an explicit reserved-fieldname structural check, beyond design intention alone.
+```text
+kernel-owned record fields are closed (an exact, enumerated set per record type; any unlisted
+    top-level field fails structural validation, unconditionally -- not because of what it is
+    named, but because it is not one of the declared fields)
+
+consumer/domain extension metadata, if the kernel allows any at all, lives inside exactly one
+    explicitly-named, opaque container field (e.g. consumerMetadata?: Record<string, unknown>)
+    that kernel logic never reads or interprets -- only stores and returns verbatim
+
+kernel logic never interprets anything inside that opaque container, regardless of what its
+    keys are named
+```
+
+Within that one designated extension container specifically (not the closed core schema, where the
+problem cannot arise at all), the corrected, non-fragile version of the original instinct is a
+**namespacing requirement**, not a word-blacklist: every extension key must be namespaced (e.g.
+`"onceaponatime:*"`), so a consumer cannot accidentally shadow or imply kernel authority with an
+unqualified key — the same structural technique D4 already uses for `kind`/`type`, applied
+consistently here instead of a second, different (and weaker) enforcement idiom.
+
+**Why:** a closed schema is a stronger, non-fragile guarantee than a maintained blacklist of
+English words — precisely the lesson D4 already drew from `registry_builder.py`'s hardcoded
+overrides, now applied consistently to this decision instead of leaving one inconsistent,
+weaker mechanism standing beside it.
+
+**Consequences:** the frozen contract's structural validator needs one closed-field-set check per
+record type (already implied by "closed core," now made an explicit, testable requirement) plus one
+namespacing check on the single opaque extension container, replacing the withdrawn reserved-word
+list entirely.
 
 **Deferred:** salience/relevance ranking entirely (named in the direction doc's own defer list as
 R1's job); any specific corroboration→display-confidence curve (Onceaponatime's own progression
 table stays in Onceaponatime's own `types.ts`, not the kernel — the kernel exposes the raw distinct
-count only).
+count only); whether the kernel allows a `consumerMetadata` extension container at all in G1A–C, or
+only from G1D onward once a real consumer decision-record use case exists — not decided here.
 
 ---
 
@@ -578,7 +828,13 @@ Onceaponatime's own receipt as the concrete worked example of "supplied, not dec
 **Consequences:** Onceaponatime's future adapter, after a successful `prepareBootstrap()`, may
 *additively* write a `(consumerId: "onceaponatime", authorityPolicyName: "bootstrap-v1", ...)`
 `AdmissionReceiptRecord` into the kernel — never a replacement for `BootstrapReceipt`, which stays
-exactly where it lives.
+exactly where it lives. This is also the exact mechanism (hardening pass, D5) by which a consumer's
+acceptance of an `IdentityCandidate` as its own stable canonical id (e.g. `actor_001`) gets recorded
+— an opaque `(consumerId, proposalIdentity: <IdentityCandidate.id>, acceptedAs: "actor_001")`-shaped
+`DecisionRecord`, never a kernel-side "accepted" state on the `IdentityCandidate` itself. `D10`'s
+own type — `DecisionRecord`/`AdmissionReceiptRecord` — is a banked eventual-architecture concept,
+not part of the first G1A–C slice; see the "Eventual kernel architecture vs. first G1A–C slice"
+section below.
 
 **Deferred:** an actual second consumer (EngAIn) — the schema supports multiple `consumerId`s by
 construction, but only Onceaponatime's own qualification is exercised until EngAIn work is
@@ -649,14 +905,12 @@ strong, direct confirmation that the master direction document's "no B2 replacem
 cheap to honor in practice, not merely in principle.
 
 **Decision:** the first Onceaponatime adapter (blueprint gates A1/A2, not built in this increment)
-is a pure function
-`translateKernelProposalsToBootstrapDiscoveryPayload(kernelArtifact, boundSourceDocuments):
-BootstrapDiscoveryPayload`, living in a new Onceaponatime-side file (not inside the kernel package,
-not inside `bootstrapDiscovery.ts`), that: (1) accepts only kernel `Observation`/`IdentitySymbol`
-candidates whose open `kind`/`type` string matches an explicit, adapter-owned mapping table —
-never a fuzzy match; (2) re-derives `SourceEvidenceUnit`s by re-validating kernel `EvidenceSpan`
+is a pure function, living in a new Onceaponatime-side file (not inside the kernel package, not
+inside `bootstrapDiscovery.ts`), that: (1) accepts only kernel `Observation`/`IdentityCandidate`
+values whose open `kind`/`type` string matches an explicit, adapter-owned mapping table — never a
+fuzzy match; (2) re-derives `SourceEvidenceUnit`s by re-validating kernel `EvidenceSpan`
 coordinates against the exact same `boundSourceDocuments` already bound to the target manifest,
-never trusting the kernel's own copy of the text; (3) leaves any non-mapping kernel proposal kind
+never trusting the kernel's own copy of the text; (3) leaves any non-mapping kernel kind
 unsupported/omitted, never coerced; (4) produces `discoveryConfidence` only when the kernel's
 corroboration/detector data honestly translates into Onceaponatime's existing
 `ambiguous|provisional|corroborated`+`supportingUnitCount`+`reasons[]` shape, otherwise leaves it
@@ -665,9 +919,34 @@ absent; (5) creates zero decisions, zero assignments, never imports or calls
 existing, unchanged `buildBootstrapManifest()`; (6) is rerun-safe/deterministic, matching every
 other B-series function.
 
+**Repaired naming (hardening pass).** The original name,
+`translateKernelProposalsToBootstrapDiscoveryPayload()`, accidentally granted the *kernel* a
+"proposal" concept — `proposal` is Bootstrap-domain vocabulary (`BootstrapProposal`,
+`BootstrapDiscoveryEntry`) that must live entirely on the Onceaponatime side of the boundary. The
+kernel exposes only evidence, observations, and identity candidates (per D4/D5); it must never be
+described, even in a function name that lives outside it, as producing "proposals." A provisional
+corrected name — **not frozen**, per instruction, since the exact input type still needs inspection
+against whatever the frozen G1A–C contract actually exports —
+is `buildBootstrapDiscoveryPayloadFromKernelEvidence(kernelEvidence: { observations:
+readonly Observation[]; identityCandidates: readonly IdentityCandidate[] }, boundSourceDocuments):
+BootstrapDiscoveryPayload`. The exact parameter shape (a bundle of observations plus identity
+candidates, versus something narrower) is deliberately left open here and must be settled once
+G1A–C's own frozen contract exists to inspect — this decision fixes the *naming/authority direction*
+problem, not the exact TypeScript signature.
+
+Restated explicitly, since this is the one place the two systems actually touch: **the kernel core
+must remain unaware that Bootstrap exists** — no kernel-package file may reference
+`BootstrapProposal`, `actor_proposal`/`object_proposal`/etc., `BootstrapManifest`,
+`BootstrapDiscoveryPayload`, or any other Onceaponatime-specific name, by import or by string
+literal. All of that vocabulary lives exclusively inside the adapter function above and its mapping
+table, on the Onceaponatime side of D1's physical/semantic boundary (restated in D1's own
+hardening-pass clarification).
+
 **Why:** reuses `buildBootstrapManifest()`'s already-decoupled seam exactly, requires no widening
-of `SUPPORTED_BOOTSTRAP_PROPOSAL_KINDS` or any other authority-bearing constant, and keeps the
-adapter a pure, review-only translation with the same shape B2 already has.
+of `SUPPORTED_BOOTSTRAP_PROPOSAL_KINDS` or any other authority-bearing constant, keeps the adapter a
+pure, review-only translation with the same shape B2 already has, and keeps "proposal" a
+consumer-owned word rather than letting it leak into the kernel's own vocabulary or the function
+name describing the kernel's output.
 
 **Consequences:** this is what makes G1A–C buildable and testable before any Onceaponatime code
 change at all — the adapter's contract can be frozen and RED-gated entirely against
@@ -679,6 +958,45 @@ later, separately-authorized gates in the blueprint.
 
 ---
 
+## Eventual kernel architecture vs. first G1A–C slice (hardening pass, Correction 3)
+
+The original document called all six direction-document concepts "the closed core" without
+distinguishing what the *first* implementable slice actually needs to prove. That was too broad:
+nothing in this session's evidence shows `ScopedStateAssertion` or `DecisionRecord`/
+`AdmissionReceiptRecord` is required to prove the minimum substrate for progressive evidence and
+identity understanding — both banked documents' own sequencing (`evidence → identity → later scoped
+state/history → retrieval → continuity consumers`) already says these are later work. The two lists
+are now stated explicitly and are allowed to differ:
+
+```text
+EVENTUAL KERNEL TYPES (unchanged from the direction document; banked architecture, not all
+implemented now):
+  SourceDocument
+  EvidenceSpan
+  Observation
+  IdentityCandidate                          (renamed from the working name IdentitySymbol)
+  ScopedStateAssertion                       (banked; not in G1A-C)
+  DecisionRecord / AdmissionReceiptRecord    (banked; not in G1A-C)
+
+G1A-C FROZEN-SLICE CANDIDATES (the actual first implementation contract target):
+  SourceDocument
+  EvidenceSpan
+  Observation
+  IdentityCandidate
+  identity-resolution evidence (the merge/split candidate records IdentityCandidate's own
+      lifecycle already requires -- not a seventh type, part of IdentityCandidate's own shape)
+  pure corroboration / merge / split projections (functions, not new stored types)
+```
+
+`ScopedStateAssertion` stays banked eventual architecture, picked up only when S1 (scoped state
+history) is separately authorized — introducing it now would be building state-assertion machinery
+before the evidence/identity substrate it depends on is even proven. `DecisionRecord`/
+`AdmissionReceiptRecord` likewise stay banked, picked up only when G1D (consumer decision/receipt
+storage) is separately authorized — Onceaponatime already has a complete, working consumer-authority
+system (`BootstrapReceipt`, per D10) that needs nothing from G1A–C to keep functioning; building a
+generic receipt-storage system merely to prove evidence/identity correctness would be scope
+creep the "keep G1 deliberately narrow" instruction specifically warns against.
+
 ## Resulting high-level G1 boundary
 
 ```text
@@ -689,30 +1007,33 @@ exact, replayable EvidenceSpans (offset-based, independently re-verified)
 Observation[] (open namespaced kind, presenceState, detector-attributed,
                proposal-only, no admission authority)
         ↓
-IdentitySymbol candidates (open namespaced type, merge/split preserves
-               every witness, no repetition-based auto-promotion)
+IdentityCandidate clusters (open namespaced type, merge/split preserves
+               every witness via content-derived ids, no repetition-based
+               auto-promotion, no "accepted" state anywhere)
         ↓
-Onceaponatime adapter (translateKernelProposalsToBootstrapDiscoveryPayload —
-               pure, review-only, zero decisions/assignments)
+Onceaponatime adapter (buildBootstrapDiscoveryPayloadFromKernelEvidence, name
+               provisional — pure, review-only, zero decisions/assignments,
+               kernel remains unaware Bootstrap exists)
         ↓
 existing BootstrapDiscoveryPayload → buildBootstrapManifest() → BootstrapReviewWorkspace
         ↓
 existing explicit author decision → existing prepareBootstrap() → existing BootstrapReceipt
 ```
 
-Kernel core types (closed, six total): `SourceDocument`, `EvidenceSpan`, `Observation`,
-`IdentitySymbol`, `ScopedStateAssertion`, `DecisionRecord`/`AdmissionReceiptRecord`. No persistence
-in the first implementable slices (G1A–C); no kernel-computed authority/salience field anywhere; no
-built-in kind/type vocabulary; no book/chapter/character/Burdens/EngAIn primitive anywhere in the
-core.
+First G1A–C frozen-slice types (four, plus pure projections — see above): `SourceDocument`,
+`EvidenceSpan`, `Observation`, `IdentityCandidate`. No persistence anywhere in this slice; no
+kernel-computed authority/salience field anywhere; no built-in kind/type vocabulary; no
+book/chapter/character/Burdens/EngAIn primitive anywhere in the core; no kernel-minted mutable
+registrar state (identity is content-derived throughout, per D3's repair).
 
 ## Explicitly deferred beyond this document (unchanged from the banked direction/blueprint, now
 reconfirmed against real code rather than merely asserted)
 
 ```text
+ScopedStateAssertion and the full scoped-state transition ledger (S1)
+DecisionRecord / AdmissionReceiptRecord kernel-side storage (G1D)
 historical relational retrieval (R1)
 NarrativeContextSelector integration
-full scoped-state transition ledger (S1)
 automatic Codex generation
 continuity auditing (C1)
 knowledge ownership propagation
@@ -720,70 +1041,89 @@ POV retrieval
 thread/reveal retrieval
 narrative salience ranking
 complete merge/split UI
-persistent database choice (G1E, gated separately)
+persistent database choice (G1E, gated separately; also where a real collision-resistant digest
+    becomes a required precondition, per D3's repair)
 automatic corpus migration
 MrLore compatibility layer
 a second real consumer (EngAIn) and any cross-repo pin/version mechanism (D1)
+a consumer-facing friendly-alias registrar layered over IdentityCandidate ids
 ```
 
-## Proposed — not implemented — next-stage G1 RED gate
+## Proposed — not implemented — next-stage G1 RED gate (revised, Correction 8)
 
-This supersedes the direction document's earlier 10-point sketch where these decisions actually
-change or sharpen it; it does not replace the blueprint's own G1-CONTRACT/G1-RED gate process,
-which still governs the real freeze-then-RED sequence.
+This is a **surgical, first-slice-only** proposal, narrowed from the prior revision to match the
+G1A–C/eventual-architecture split above: it proves only `SourceDocument`, `EvidenceSpan`,
+`Observation`, and `IdentityCandidate`, never `ScopedStateAssertion` or `DecisionRecord`/
+`AdmissionReceiptRecord` (those get their own, separately authorized gates when S1/G1D exist), and
+never the Onceaponatime adapter's own behavior in detail (that is D12's own future A1 gate, per the
+blueprint — this RED only proves the kernel remains structurally unaware of Bootstrap, not that the
+adapter itself works correctly). It still does not replace the blueprint's own
+G1-CONTRACT/G1-RED gate process, which governs the real freeze-then-RED sequence, and it is still a
+proposal, not RED — writing it is explicitly out of scope for this increment.
 
 1. Arbitrary `SourceDocument`s (no book/chapter/directory convention) produce structurally valid,
    deeply-frozen kernel values; a document missing/malformed in any required field fails closed.
-2. `EvidenceSpan` coordinates are UTF-16 code-unit offsets that independently re-verify against the
-   exact pinned `SourceDocument` text; a tampered/mismatched `exactText` fails closed; two
-   identical-text spans at different offsets in one document remain distinct; identical text across
-   two documents never collides.
-3. No kernel-core type, constant, or default value names a real project identity (no
-   "Vale"/"Luminaire"/"Geralt"-shaped literal, no `book_XX_chNNN` convention) anywhere in kernel
-   production code — a static-source-scan toxic fixture, mirroring how B2/B3's reachable-import-
-   graph tests already work.
-4. `Observation.kind`/`IdentitySymbol.type` accept any well-formed namespaced string and reject only
-   malformed *shape* (empty, un-namespaced) — never a specific unrecognized domain term.
-5. A single `Observation`, however many times repeated, never by itself transitions an
-   `IdentitySymbol` past `candidate` — corroboration count rises; resolution status does not move
-   without an explicit call representing a resolution decision, which itself is never invoked
-   automatically by observation volume.
-6. Corroboration/detector-confidence fields are structurally present and readable, but no code path
-   from them can set any field named `authority`/`canonical`/`approved`/`admitted` anywhere in the
-   kernel core — enforced by an explicit reserved-fieldname structural rejection test.
-7. A merge or split candidate preserves every contributing `Observation`/`EvidenceSpan` reference;
-   none is deleted or silently reassigned; the toxic fixture "split candidate reassigns evidence
-   silently" must fail closed.
-8. An unknown/unsupported `Observation` kind or `IdentitySymbol` type is preserved as
+2. `EvidenceSpan` coordinates are UTF-16 code-unit offsets (a TypeScript-representation choice, per
+   D2's hardening-pass clarification, not a universality claim) that independently re-verify against
+   the exact pinned `SourceDocument` text; a tampered/mismatched `exactText` fails closed.
+3. Repeated identical text at different offsets in one document remains distinct; identical text
+   across two documents never collides — both by construction of the `(sourceDocumentId, offsets)`
+   identity, not by a fingerprint check.
+4. Evidence validation fails against stale/changed source text — reusing
+   `sourceDocumentsAreIdentical()`'s exact field-by-field comparison, never the fingerprint alone.
+5. `Observation`s remain immutable and source-traceable after any later `IdentityCandidate`
+   merge/split/resolution-state change — an `Observation` fetched by its own id before and after such
+   a change is byte-identical.
+6. An `IdentityCandidate`'s resolution status never moves past `candidate` from `Observation` volume
+   alone — corroboration count rises with repetition; resolution state changes only via an explicit
+   call representing a resolution decision, never automatically from observation count.
+7. Corroboration is computed from the count of distinct `EvidenceSpan`/`Observation` ids, never raw
+   mention count (reusing the distinct-unit rule `BootstrapDiscoveryConfidence.supportingUnitCount`
+   already proves out) — a toxic fixture with many duplicate-content, colliding-fingerprint
+   observations must still report the correct *distinct* count.
+8. A merge or split operation preserves every contributing `Observation`/`EvidenceSpan` reference —
+   none deleted, none silently reassigned; the superseded `IdentityCandidate`(s) remain independently
+   retrievable by their own (unchanged) ids with an explicit `supersededBy` pointer, never deleted or
+   overwritten; the toxic fixture "split candidate reassigns evidence silently" must fail closed.
+9. An unknown/unsupported `Observation.kind` or `IdentityCandidate.type` is preserved as
    unknown/unsupported through every kernel-core operation — never coerced into a recognized kind by
-   any code path, including the Onceaponatime adapter stub.
-9. G1A–C perform zero durable writes; every operation is a pure function over supplied values,
-   verified by re-running twice on identical input and asserting byte-identical, reference-fresh
-   output (no hidden mutation of caller-owned input).
-10. `DecisionRecord`/`AdmissionReceiptRecord` (if exercised by this RED at all — may be deferred
-    entirely to a G1D-specific RED per D8's decision) are stored/read back byte-for-byte, qualified
-    by `(consumerId, authorityPolicyName, authorityPolicyVersion)`; a record written under one
-    `consumerId` is never returned by a query scoped to a different `consumerId`.
-11. `translateKernelProposalsToBootstrapDiscoveryPayload()` (D12) — once its own contract is frozen,
-    likely a separate adapter-specific RED per the blueprint's own A1 gate, not folded into the
-    kernel's own RED — produces a `BootstrapDiscoveryPayload` that `buildBootstrapManifest()`
-    accepts unmodified, creates no decision, no assignment, and never imports
-    `decideBootstrapManifestEntry`/`prepareBootstrap`/`updateActiveProject` (a static reachable-
-    import-graph check, mirroring every prior B-series adapter-boundary test).
-12. Toxic fixtures required by the blueprint's own Gate G1-RED list (repeated text same/different
-    document, multibyte Unicode before/inside a span, changed source with stale coordinates,
-    duplicate JSON keys, non-finite numbers, shuffled record order, duplicate ids, unknown ontology
-    term, a Burdens-shaped identity embedded in a purported core config, a high-confidence proposal
-    with no consumer decision, a merge candidate dropping one witness, a split candidate silently
-    reassigning evidence, one consumer's admission record presented as another's) are all
-    represented, each as its own isolated failing test per the blueprint's RED-domain separation
-    rule (source/evidence identity; serialization/fingerprints; observation behavior; identity/alias
-    behavior; merge/split lineage; unknown-extension policy; consumer-qualified records; persistence
-    atomicity only if G1D/E is in scope; adapter authority isolation only once D12's own contract is
-    frozen).
+   any code path.
+10. **Fingerprint-versus-identity (new, Correction 1):** two distinct `Observation`s or
+    `EvidenceSpan`s constructed to share the same short diagnostic (FNV-1a) fingerprint but with
+    genuinely different `stableSerialize()`-based content never become the same record through any
+    kernel operation — any fingerprint-keyed lookup structure must return every colliding candidate
+    for a full structural equality check, never the first fingerprint match alone.
+11. G1A–C perform zero durable writes; every operation is a pure function over supplied values,
+    verified by re-running twice on identical input and asserting byte-identical, reference-fresh
+    output (no hidden mutation of caller-owned input).
+12. **Kernel unaware of Bootstrap, and closed-schema-first (new/merged, Corrections 1, 4, 5, 6):** a
+    static source scan of the kernel package proves (a) no kernel-core type, constant, or default
+    value names a real project identity (no "Vale"/"Luminaire"/"Geralt"-shaped literal, no
+    `book_XX_chNNN` convention — mirroring B2/B3's reachable-import-graph tests); (b) no kernel-package
+    file imports anything from `app/src` or `app/server`, or references `BootstrapProposal`,
+    `actor_proposal`/`object_proposal`/etc., `BootstrapManifest`, or `BootstrapDiscoveryPayload` by
+    name; (c) every kernel-core record type rejects any field outside its own exact, enumerated field
+    set (closed-schema check, replacing the withdrawn reserved-fieldname blacklist) — an attempt to
+    add a top-level `authority`/`canonical`/`approved`/`admitted` field (or any other unlisted field)
+    to a core record fails structural validation unconditionally.
 
-This is a proposal for what the eventual RED gate should prove, informed by the decisions actually
-made above. It is not itself RED. Writing it is explicitly out of scope for this increment.
+Toxic fixtures required by the blueprint's own Gate G1-RED list that apply to this narrowed
+first slice (repeated text same/different document, multibyte Unicode before/inside a span, changed
+source with stale coordinates, duplicate JSON keys, non-finite numbers, shuffled record order,
+duplicate ids, unknown ontology term, a Burdens-shaped identity embedded in a purported core config,
+a merge candidate dropping one witness, a split candidate silently reassigning evidence) are all
+represented, each as its own isolated failing test per the blueprint's RED-domain separation rule.
+Toxic fixtures specific to consumer-qualified records or persistence atomicity (a high-confidence
+proposal with no consumer decision; one consumer's admission record presented as another's;
+interrupted/retried publication) are explicitly deferred to G1D/E's own, separately authorized RED,
+not folded in here, per the eventual-architecture/first-slice split above.
+
+The Onceaponatime adapter's own detailed behavior (mapping table correctness, evidence
+re-derivation, zero-decision/zero-assignment proof, the exact reachable-import-graph ban on
+`decideBootstrapManifestEntry`/`prepareBootstrap`/`updateActiveProject`) remains a separate,
+adapter-specific RED gate under the blueprint's own A1 gate, authorized only once G1A–C's own
+contract is frozen and shipped — not folded into the kernel's own RED, consistent with "do not force
+adapter tests... into this first RED" from this task's own instructions.
 
 ---
 
@@ -807,8 +1147,30 @@ MrLore (read-only; nothing modified):
   tool file structure grepped only).
 ```
 
-`LITERARY_MECHANICS.md` and `PROPOSAL.md` were listed in the task's Step 1 reading list; their
-relevant content (identity-neutral entity model, progressive discovery, alias resolution,
-reliability scoring) is already fully represented in `app/src/types.ts` and `app/src/lib/
-codexEngine.ts`, which were read directly — no additional D1–D12 answer depended on re-reading the
-narrative-prose versions of the same material.
+`LITERARY_MECHANICS.md` and `PROPOSAL.md` were listed in the original D1–D12 pass's Step 1 reading
+list; their relevant content (identity-neutral entity model, progressive discovery, alias
+resolution, reliability scoring) was judged already represented in `app/src/types.ts` and
+`app/src/lib/codexEngine.ts`, which were read directly.
+
+## Files re-inspected for this hardening pass
+
+```text
+G1_LORE_EVIDENCE_KERNEL_DESIGN.md (this file, prior revision — read in full before editing),
+POST_B4_MRLORE_MECHANICS_INTEGRATION_BLUEPRINT.md, POST_B4_LORE_EVIDENCE_KERNEL_DIRECTION.md
+(re-checked against the corrections; neither required amendment),
+LITERARY_MECHANICS.md (grepped for identity/merge/split/canonical/alias, then read the "Entity
+Splitting"/"Entity Merging"/"Established Fact vs. Inference" section in full — confirms identity
+confidence is already kept separate from other confidence axes and that inference must never
+silently become canon, both consistent with, and supporting, Corrections 1-2),
+PROPOSAL.md (grepped for identity/canonical/merge/split/neutral/kernel, then read the "Absolute
+Identity-Neutrality Rule"/"Stable Internal Identity" section in full — confirms the consumer-owned,
+project-minted stable id pattern (actor_001, etc.) that Correction 2's IdentityCandidate/consumer-
+acceptance split is built on already exists and is proven in this exact codebase),
+app/src/lib/bootstrapManifest.ts, app/src/lib/bootstrapDiscovery.ts, app/src/lib/prepareBootstrap.ts
+(re-checked the specific functions cited in the corrections: stableSerialize(), fingerprintString(),
+sourceDocumentsAreIdentical(), assertValidEvidence(), validateBootstrapManifestStructure(),
+buildBootstrapManifest()).
+```
+
+No MrLore file was re-read or modified for this pass (none of the seven corrections required new
+MrLore evidence beyond what the original D1–D12 pass already gathered).
