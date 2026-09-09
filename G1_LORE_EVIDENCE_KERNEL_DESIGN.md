@@ -55,6 +55,46 @@ D-section and in the final report to the user):
 7. **D2 clarified, not changed** — UTF-16 offsets are restated as a TypeScript-representation
    choice, not a claim of universal/language-neutral coordinate semantics. See D2 below.
 
+## Pre-freeze consistency reconciliation (this revision)
+
+The immediately preceding hardening pass's seven corrections above are accepted and preserved. This
+revision closes five narrower, freeze-blocking consistency problems the previous pass's own
+`IdentityCandidate` repair left standing, plus two contract-level details found on re-inspection:
+
+1. **G1A–C artifacts made genuinely immutable.** The previous pass's `IdentityCandidate` still
+   carried a mutable `resolutionLifecycle` field and a merge/split model that "marked" predecessors
+   and wrote a forward `supersededBy` pointer onto them — mutation of an artifact whose whole claim
+   to identity was "content-derived, therefore immutable." `EvidenceSpan`'s `valid`/`invalidated`
+   state and `Observation`'s `proposed | superseded | retracted` lifecycle had the identical latent
+   problem. All three are repaired: `EvidenceSpan` validity is now a pure on-demand projection
+   (`validateEvidenceSpan()`), never stored state; `Observation` carries no lifecycle field at all,
+   only immutable provenance; `IdentityCandidate` is an immutable snapshot, and `merge()`/`split()`
+   return **new** candidates with backward `derivedFromCandidateIds`/`derivationKind` lineage,
+   leaving every input byte-identical. See D5 below.
+2. **Resolver provenance separated from detector provenance.** `IdentityCandidate` had silently
+   reused `detectorId` as its own provenance, conflating detection ("this span expresses entity-like
+   information") with identity resolution ("these observations may cluster"). `IdentityCandidate`
+   now carries its own `resolverId`/`resolverVersion`, explicitly decided to be identity-defining —
+   the same semantic grouping from two different resolver versions is two distinct candidates, by
+   design. See D5 and D9 below.
+3. **`stableSerialize()`'s injectivity claim bounded to an explicit admissible value domain.** The
+   previous pass overclaimed injectivity "by construction" for arbitrary JavaScript values. This
+   revision defines the actual admissible domain (strings, booleans, `-0`-normalized finite numbers,
+   dense arrays, plain closed-schema objects) and explicitly excludes `NaN`/`Infinity`, sparse
+   arrays, `Date`/`Map`/`Set`/class instances, symbols, and non-enumerable properties from
+   identity-defining material. The opaque `consumerMetadata` extension container proposed (but left
+   undecided) in the previous pass is withdrawn entirely from G1A–C — it would have reopened exactly
+   this problem. See D3 and D6 below.
+4. **Corroboration redefined as evidence-based, not observation-based.** The previous pass's
+   corroboration count conflated distinct `EvidenceSpan` ids with distinct `Observation` ids,
+   letting multiple detector observations over one source span masquerade as multiple witnesses.
+   Corroboration now counts distinct `EvidenceSpan` identities only. See D6 below.
+5. **The proposed RED gate rewritten again** to match the immutable-snapshot model, the resolver/
+   detector provenance split, the bounded serialization domain, and the corrected corroboration
+   definition — and to remove a toxic fixture (duplicate JSON keys) that tests the wrong abstraction
+   boundary for a kernel that receives already-parsed values, not raw JSON text. See the RED gate
+   section below.
+
 ## Correction to the task framing before proceeding
 
 The task instructed reading D1–D12 out of `POST_B4_LORE_EVIDENCE_KERNEL_DIRECTION.md`. On
@@ -317,26 +357,72 @@ content *can* define it (`EvidenceSpan`, `Observation`, and — see the `Identit
 below — the renamed identity-clustering record), the record's real identity is **Option B**: a
 complete deterministic structural key whose equality is independently verifiable, not a compressed
 digest. Concretely, this is `stableSerialize()`'s own canonical output over the record's
-identity-defining fields, used directly as the identity key (not hashed down to 32 bits first).
-`stableSerialize()`'s existing guarantees (sorted object keys, JSON's own unambiguous structural
-delimiting of strings/arrays/objects, explicit non-finite-number rejection) already make this
-injective by construction: two different values can never produce the same canonical serialization,
-so two different `Observation`s or `EvidenceSpan`s can never collide on this key, full stop — there
-is no "short hash" step in the identity path at all. The existing FNV-1a fingerprint may still be
-computed *from* that same canonical serialization purely as a compact diagnostic/bucket key (per
-(1) above), but it is downstream of identity, never identity itself.
+identity-defining fields, used directly as the identity key (not hashed down to 32 bits first). The
+existing FNV-1a fingerprint may still be computed *from* that same canonical serialization purely as
+a compact diagnostic/bucket key (per (1) above), but it is downstream of identity, never identity
+itself.
+
+**Repaired (this pass): the injectivity claim was too broad, and is now bounded to an explicit
+admissible value domain instead of "arbitrary JavaScript values."** The prior revision claimed
+`stableSerialize()` is "injective by construction" without qualification. That overstates the
+current helper: it operates on `unknown`, serializes numbers via `JSON.stringify()` (which does not
+distinguish `-0` from `0`, and represents `NaN`/`Infinity`/`-Infinity` as `null`-shaped or invalid
+output rather than rejecting them explicitly at the serialization step), and accepts any plain
+object/array shape without first defining which JavaScript values are even admissible as kernel
+identity material. Injectivity is not a property of `stableSerialize()` over all of `unknown` — it
+is only true, and only claimed, over an explicitly bounded **admissible kernel value domain**,
+defined here rather than left implicit:
+
+```text
+ADMISSIBLE (identity-defining values, G1A-C):
+    strings                          (any valid UTF-16 string, unrestricted content)
+    booleans
+    finite numbers, with -0 normalized to 0 before serialization
+                                      (a dedicated normalization step, not merely relying on
+                                       JSON.stringify's own -0 behavior, which is inconsistent
+                                       across engines/versions and must not be load-bearing)
+    dense arrays of admissible values (no holes; a sparse array is rejected, not silently
+                                      "densified" -- see below)
+    plain objects with either Object.prototype or a null prototype, whose every value is
+        itself admissible, restricted to exactly the closed field set the record's own schema
+        declares (per D6's closed-schema rule) -- no other object shape is admissible
+
+NOT ADMISSIBLE anywhere in identity-defining material (rejected by structural validation,
+    never silently coerced or dropped):
+    NaN, Infinity, -Infinity          (already excluded by the existing Number.isFinite check;
+                                       restated here as part of the domain, not a separate rule)
+    undefined                         (as a value; an optional field is either present with an
+                                       admissible value or genuinely absent from the object,
+                                       never present-and-undefined)
+    BigInt, Symbol, functions
+    Date, Map, Set, RegExp, and any other built-in with non-plain internal state
+    class instances / any object with a non-Object/non-null prototype
+    sparse arrays (a hole is not the same as an admissible value and is never treated as one)
+    non-enumerable properties (identity is computed only over enumerable own properties)
+    symbol-keyed properties (identity is computed only over string-keyed own properties)
+```
+
+A record containing anything outside this domain in an identity-defining field fails structural
+validation before an identity key is ever computed — this is a toxic-fixture requirement for the
+RED gate below, not merely a documented restriction. `stableSerialize()`'s corrected contract
+becomes: **injective over the admissible kernel value domain**, never claimed injective over
+arbitrary JavaScript values. This is a small, deliberately narrow domain — "the safest solution... is
+likely to reject anything outside the tiny data vocabulary the kernel actually needs," per
+instruction — rather than growing the domain to accommodate a type merely because it is common in
+JavaScript.
 
 **Explicit answer to "what happens if two different serialized observations produce the same short
-fingerprint?"** Nothing treats them as the same. Their `stableSerialize()`-based identity keys
-remain different (by construction, per the injectivity argument above), so they remain two distinct
-records under any correct implementation. The failure this decision actually forecloses is
-structural, not merely definitional: any G1 code that indexes records by their short diagnostic
-fingerprint (e.g. a hashmap used purely for lookup speed) must store a bucket of colliding
-candidates and re-check full `stableSerialize()` equality before returning a match — it may never
-return "found" on a bucket hit alone. This is a required structural test (see the revised proposed
-RED gate below), not merely a documented intention — mirroring how `sourceDocumentsAreIdentical()`
-already relates to `fingerprintSourceDocuments()` today: the fingerprint is a hint, the field-by-field
-comparison is the proof.
+fingerprint?"** Nothing treats them as the same. Their `stableSerialize()`-based identity keys, over
+the admissible domain above, remain different (by construction, since two different admissible
+values can never produce the same canonical serialization within that bounded domain), so they
+remain two distinct records under any correct implementation. The failure this decision actually
+forecloses is structural, not merely definitional: any G1 code that indexes records by their short
+diagnostic fingerprint (e.g. a hashmap used purely for lookup speed) must store a bucket of
+colliding candidates and re-check full `stableSerialize()` equality before returning a match — it
+may never return "found" on a bucket hit alone. This is a required structural test (see the revised
+proposed RED gate below), not merely a documented intention — mirroring how
+`sourceDocumentsAreIdentical()` already relates to `fingerprintSourceDocuments()` today: the
+fingerprint is a hint, the field-by-field comparison is the proof.
 
 *Collision-resistant digests, deferred correctly.* This decision does not select SHA-256 (or any
 other real cryptographic digest) now, and does not need to: G1A–C hold every record fully in memory
@@ -353,9 +439,11 @@ summary above).** The prior "IdentitySymbol ids minted per-project via a kernel-
 counter" is withdrawn — it contradicted G1A–C's own purity/statelessness (D8) and conflated
 "identity candidate" with "accepted identity" (see the rewritten `IdentityCandidate` definition in
 D5 below). The renamed `IdentityCandidate`'s id is, like `Observation`'s, **content-derived** —
-`stableSerialize()` over its own defining fields (its detector origin, and the exact, sorted set of
-`Observation` ids it currently clusters) — recomputed identically given the same inputs, requiring
-no mutable registrar, no incrementing counter, and no persistence. A consumer's own stable,
+`stableSerialize()` over its own defining fields (its **resolver** origin — `resolverId`/
+`resolverVersion`, distinct from a detector's `detectorId`/`detectorVersion`; see D5's own repair
+for why these are two different provenance concepts — and the exact, sorted set of `Observation` ids
+it clusters, over the admissible value domain above) — recomputed identically given the same inputs,
+requiring no mutable registrar, no incrementing counter, and no persistence. A consumer's own stable,
 project-owned canonical id (e.g. Onceaponatime's `actor_001`, per `PROPOSAL.md`'s own "Stable
 Internal Identity" section — already exactly this pattern, already proven) is minted entirely by
 that consumer, never by the kernel, and is recorded — if at all — only inside that consumer's own
@@ -373,11 +461,14 @@ where the prior design secretly required kernel-owned mutable state despite clai
 elsewhere.
 
 **Consequences:** G1A's serialization/identity module still extracts near-verbatim from
-`bootstrapManifest.ts`'s `stableSerialize()`, but the frozen contract must now specify, per record
-type, exactly which fields are "identity-defining" (fed to the structural key) versus merely
-descriptive (excluded from it) — a new, concrete freeze-time requirement this correction surfaces
-that the original D3 answer did not need, since it never had a real identity key distinct from the
-fingerprint to define.
+`bootstrapManifest.ts`'s `stableSerialize()`, adapted to reject the not-admissible domain above
+explicitly (Onceaponatime's own version only rejects non-finite numbers and unsupported top-level
+types; it was never asked to reject sparse arrays, class instances, or normalize `-0`, since none of
+those cases arise in its actual call sites — G1's version must, since it is a public boundary rather
+than an internal helper called only on already-well-formed values). The frozen contract must now
+specify, per record type, exactly which fields are "identity-defining" (fed to the structural key,
+and therefore constrained to the admissible domain) versus merely descriptive (excluded from
+identity, but still subject to the same closed-schema field-set rule from D6).
 
 **Deferred:** a real collision-resistant digest algorithm, required before G1E's own freeze (not an
 open-ended deferral, per above); retry/idempotency-key mechanics for a future durable write, using
@@ -458,17 +549,43 @@ insufficient — a reusable, already-validated structural pattern, not a contest
 
 **Decision:** G1 defines these independent axes, none collapsible into another:
 
-1. **EvidenceSpan validity** — binary: valid (replays against pinned source) / invalidated (source
-   changed or removed). Nothing else; evidence is either an exact witness or it is not.
-2. **Observation lifecycle** — `proposed | superseded | retracted`. Never "approved" — approval is
-   entirely a consumer concern, outside this axis.
-3. **`IdentityCandidate` resolution lifecycle** (renamed from the working name `IdentitySymbol` —
-   see the repaired definition immediately below) — `candidate | needs_review | merged | split |
-   deprecated`, mirroring MrLore's registry `status` values (already neutral). Deliberately excludes
-   anything like "approved"/"canon."
+1. **EvidenceSpan validity** — **repaired (this pass): a pure projection, not stored state.**
+   The original wording ("valid / invalidated") read as a lifecycle field living *on* the
+   `EvidenceSpan` record, which would make the record mutable (or require minting a new record on
+   every source edit merely to flip a flag). Corrected: `EvidenceSpan` carries no validity field at
+   all. `validateEvidenceSpan(span, sourceDocument): 'valid' | 'invalid'` is a pure function computed
+   fresh, on demand, by re-slicing `sourceDocument` at the span's offsets and comparing to
+   `span.exactText` — exactly `assertValidEvidence()`'s existing check, exposed as a query rather than
+   a stored flag. A source edit makes old spans fail this projection; it never mutates the old
+   `EvidenceSpan` object, which remains byte-identical and independently retrievable regardless of
+   whether it now validates.
+2. **Observation** — **repaired (this pass): no mutable lifecycle in G1A–C.** The original
+   `proposed | superseded | retracted` axis implied a mutable observation registry (something can
+   transition an `Observation` from `proposed` to `superseded`), which none of G1A–C's own
+   purity/statelessness rules can support without either changing the record's identity (if the
+   state is identity-defining) or making two different byte-shapes share one id (if it is not) — the
+   same contradiction Correction 2's `IdentityCandidate` repair already found and fixed, now applied
+   consistently to `Observation` too. G1A–C's `Observation` therefore has **no disposition/lifecycle
+   field at all**: it records only what was observed, where (cited `EvidenceSpan` ids), by which
+   detector (`detectorId`/`detectorVersion`/`languageProfile`, per D9), and with what detector
+   confidence — immutable provenance, never mutable state. Whether a given `Observation` is later
+   treated as superseded, retracted, or still live is entirely a property of what a later, separate,
+   equally immutable `IdentityCandidate` (or a future ledger/event layer, explicitly deferred) says
+   about it — never a field mutated on the `Observation` itself. An `Observation`, once constructed,
+   never changes and is never described as being in a state; it simply exists, or does not exist, as
+   an immutable fact about what a detector saw.
+3. **`IdentityCandidate`** (renamed from the working name `IdentitySymbol`) — **repaired (this pass):
+   no mutable resolution-lifecycle field in G1A–C**, for the identical reason `Observation`'s was
+   removed. See the fully repaired definition immediately below, which replaces the prior
+   `resolutionLifecycle: candidate | needs_review | merged | split | deprecated` field with an
+   immutable-snapshot model: an `IdentityCandidate` is already a candidate by type — it does not also
+   need a `status: candidate` field to restate that — and merge/split produce **new** immutable
+   candidate artifacts carrying backward lineage, rather than mutating or relabeling their inputs.
 4. **ScopedStateAssertion lifecycle** — `proposed | contradicted | superseded`. A contradiction
    never deletes either assertion. (Banked eventual-architecture axis; `ScopedStateAssertion` itself
-   is not part of the first G1A–C slice — see below.)
+   is not part of the first G1A–C slice — see below. Not repaired in this pass since it is not part
+   of the first slice; whoever authorizes S1 must re-examine whether this axis has the same
+   mutability problem before freezing it.)
 5. **Consumer decision lifecycle** — entirely consumer-owned and stored opaquely (Onceaponatime's
    own `pending|approved|edited|rejected` is unchanged, lives entirely in Onceaponatime's own
    layer, and the kernel never interprets it).
@@ -485,44 +602,120 @@ only a consumer's projection over admitted assertions produces one); `reviewed !
 distinction); `admitted by Onceaponatime != admitted by EngAIn` (two separate consumer-qualified
 records, D10).
 
-**Repaired definition (hardening pass): `IdentityCandidate`, not `IdentitySymbol`.** The original
-draft used the direction document's own working name `IdentitySymbol` and, in D3, quietly gave it a
-kernel-minted incrementing id — implying acceptance/canonical status ("symbol" reads as an already-
-resolved referent) while also requiring hidden mutable registrar state that contradicts G1A–C's own
-purity/statelessness (D8). Both problems are fixed by one rename-plus-redefinition:
+**Repaired definition (this pass, superseding the prior hardening pass's version): `IdentityCandidate`
+is an immutable snapshot, not a mutable-lifecycle record.** The immediately preceding hardening pass
+correctly renamed `IdentitySymbol` to `IdentityCandidate` and made its id content-derived, but left a
+`resolutionLifecycle: candidate | needs_review | merged | split | deprecated` field plus a
+merge/split model that "marks" predecessors and writes a forward `supersededBy` pointer onto them.
+That is mutation of an artifact whose whole claim to identity is "content-derived and therefore
+immutable" — the same contradiction the rename was supposed to close, just relocated one field over.
+Two, and only two, outcomes follow from letting a stored artifact's own field change while its id
+stays the same, and this task correctly rejects both: either the changed field is identity-defining
+(so the id was never actually stable across the change — it silently changed too) or it is not
+identity-defining (so two byte-different records legitimately share one id, and "artifact identity"
+no longer identifies one immutable artifact). G1A–C cannot accept either outcome. The repair removes
+the mutation instead of choosing between them:
 
 ```text
-Observation (immutable, source-traceable, never mutated by anything downstream)
-        ↓ a deterministic or model-assisted identity-resolution process groups Observations
-        ↓ it believes may refer to the same underlying referent
+Observation (immutable, source-traceable; see the repaired axis 2 above -- no lifecycle field)
+        ↓ a resolver (deterministic or model-assisted; see the repaired provenance model below)
+        ↓ groups Observations it believes may refer to the same underlying referent
 
-IdentityCandidate
-    id:                     content-derived (stableSerialize() over detector origin + the exact,
-                             sorted set of member Observation ids) -- see D3's repaired identity
-                             model; never a kernel-minted counter, never mutable registrar state
-    type:                   open namespaced string, per D4 (unknown/unresolved always legal)
-    memberObservationIds:   the exact, immutable set of Observations grouped -- original
-                             Observations are never mutated, deleted, or made unaddressable by
-                             any later merge/split/resolution change
-    resolutionLifecycle:    candidate | needs_review | merged | split | deprecated -- NO
-                            "approved"/"accepted"/"canonical" state exists anywhere on this type
+IdentityCandidate                                  -- an immutable snapshot, full stop
+    id:                       content-derived: stableSerialize() over every field below, restricted
+                              to the admissible value domain (D3's repair) -- never a kernel-minted
+                              counter, never mutable registrar state, never itself mutated
+    type:                     open namespaced string, per D4 (unknown/unresolved always legal)
+    memberObservationIds:     the exact, immutable, sorted set of Observations grouped -- original
+                              Observations are never mutated, deleted, or made unaddressable by any
+                              later merge/split
+    resolverId:               identifies the identity-resolution process that produced this
+                              candidate -- see the repaired provenance model below; distinct from
+                              detectorId/detectorVersion (D9), which identifies what produced the
+                              member Observations, a genuinely separate operation
+    resolverVersion:          version of that resolver
+    derivedFromCandidateIds:  the exact, immutable, sorted set of prior IdentityCandidate ids this
+                              one was derived from via merge/split -- empty for a candidate a
+                              resolver produced directly from Observations, not from another
+                              candidate
+    derivationKind:           'direct' | 'merge' | 'split' -- 'direct' iff derivedFromCandidateIds
+                              is empty
+    derivationEvidence:       the resolver's own basis for this specific grouping/merge/split (e.g.
+                              cited co-occurrence/alias-disclosure Observations) -- itself admissible-
+                              domain data, folded into the identity key like every other field above
 
-merge(candidateA, candidateB, evidence) -> new IdentityCandidate
-    fresh, recomputed content-derived id (since membership changed); candidateA/candidateB are
-    marked merged, not deleted, and carry an explicit supersededBy pointer to the new id; every
-    original member Observation remains independently retrievable under its own unchanged id
+    NO resolutionLifecycle, NO status, NO supersededBy, NO mutable field of any kind -- and
+    absolutely no "approved"/"accepted"/"canonical" state anywhere on this type. Acceptance is
+    exclusively a consumer DecisionRecord concept (below), never a kernel-side field.
 
-split(candidate, evidence) -> IdentityCandidate[]
-    same shape, reversed: candidate is marked split with supersededBy pointers to the new ids;
-    every original member Observation remains independently retrievable
+merge(candidateA, candidateB, resolutionEvidence) -> new IdentityCandidate
+    candidateA and candidateB are returned completely untouched -- byte-identical, same ids,
+    independently retrievable exactly as before the call
+    the new candidate's own memberObservationIds is the union of both inputs' members;
+    derivedFromCandidateIds = [candidateA.id, candidateB.id]; derivationKind = 'merge';
+    derivationEvidence = resolutionEvidence
+    its id is freshly, deterministically computed from this new content -- nothing is written onto
+    candidateA or candidateB to record that this happened; a caller wanting "what did A get merged
+    into" queries forward from A's id across every stored candidate's derivedFromCandidateIds (a
+    read-only projection over immutable data, described further below), never a field on A itself
 
-consumer acceptance (entirely outside the kernel)
+split(candidate, resolutionEvidence) -> IdentityCandidate[]
+    candidate is returned completely untouched -- byte-identical, same id, independently
+    retrievable exactly as before the call
+    each output candidate's memberObservationIds is its share of candidate's own members;
+    derivedFromCandidateIds = [candidate.id] on every output; derivationKind = 'split';
+    derivationEvidence = resolutionEvidence
+    same "no forward write" rule as merge
+
+forward-lineage views (e.g. "what superseded candidate A") are read-only projections a query layer
+    computes on demand by scanning derivedFromCandidateIds backward-pointers across whatever
+    candidates are currently held -- never a stored, mutated field. This may become a proper
+    index in a later G1D/E persistence layer; it is a pure function over immutable data in G1A-C,
+    consistent with D8's zero-persistence decision for this slice.
+
+consumer acceptance (entirely outside the kernel, unchanged from the prior pass)
     Onceaponatime mints its OWN stable, project-owned canonical id (e.g. actor_001, per
     PROPOSAL.md's own "Stable Internal Identity" section -- already exactly this pattern) and
     MAY record, inside its own DecisionRecord (D10), a link such as
     (consumerId: "onceaponatime", proposalIdentity: <IdentityCandidate.id>, acceptedAs: "actor_001")
     -- the kernel stores this opaquely, without ever interpreting what "acceptedAs" means
 ```
+
+This is exactly the pattern `LITERARY_MECHANICS.md`'s own "Entity Splitting"/"Entity Merging"
+sections already require ("The graph needs to be able to correct itself without destroying the
+original evidence" / "merge identities while preserving mention history") and what that same
+document's "Confidence Revision" section already demands generally ("The framework cannot treat its
+first interpretation as permanent truth... New evidence may reinforce/weaken/contradict/split/
+replace an earlier interpretation") — both already describe *replacing an interpretation*, never
+*rewriting the old one in place*, which is precisely backward lineage over immutable snapshots
+rather than forward mutation.
+
+**Repaired resolver-provenance decision (this pass, Job 2 above).** The immediately preceding
+hardening pass silently reused `detectorId` as `IdentityCandidate`'s own provenance, without
+examining whether detection and identity resolution are the same operation. They are not, in
+general: a detector answers "this source span expresses entity-like/reference-like information"
+(D9); identity resolution answers "these observations may refer to the same underlying thing" — a
+different question, potentially (and, per this document's own D9 architecture, usually) performed by
+a different component with its own versioning. The corrected decision introduces `resolverId`/
+`resolverVersion` as `IdentityCandidate`'s own, separate provenance (defined in the snapshot shape
+above), and settles the question this task explicitly required not be left implicit:
+
+```text
+Does resolver provenance participate in IdentityCandidate artifact identity?  YES.
+```
+
+`resolverId`/`resolverVersion` are identity-defining fields, fed into the same `stableSerialize()`
+key as every other field of the snapshot. The direct consequence, stated explicitly because it is
+counting-intuitive: **the same semantic grouping independently emitted by two different resolver
+versions is two distinct `IdentityCandidate` artifacts**, with two different ids, even though a human
+might consider them "the same hypothesis." This is accepted, not treated as a bug — deduplicating
+across resolver versions merely to produce fewer candidates would require the kernel to judge two
+resolvers' outputs semantically equivalent, which is exactly the kind of interpretive authority the
+kernel must never hold (mirroring D6's own rule that the kernel never judges truth or equivalence,
+only stores what it is given). A later layer — a future query/index projection, or a consumer's own
+adapter — may choose to treat same-membership candidates from different resolver versions as
+equivalent hypotheses for its own purposes; the kernel itself never makes that judgment or collapses
+them into one record.
 
 "Candidate" was chosen over "Hypothesis"/"Cluster": it matches MrLore's own already-neutral registry
 vocabulary (`candidate` status value, `merge_candidate`, `split_candidate` in
@@ -539,19 +732,24 @@ convention over real evidence, never the identity mechanism) — explicitly defe
 G1A–C.
 
 **Why:** both donor systems already independently learned the multi-axis lesson; regressing to one
-shared "status" field in G1 would be a step backward relative to both. The `IdentityCandidate`
-rename/redefinition removes a real internal contradiction (mutable kernel-owned minting state
-inside an otherwise-pure kernel) rather than merely renaming a word.
+shared "status" field in G1 would be a step backward relative to both. Removing the mutable
+lifecycle/`supersededBy` fields closes the exact contradiction this task identified — a first slice
+that claims "pure, immutable, content-derived identity" cannot also contain a miniature mutable
+registry disguised as a value type. Separating `resolverId` from `detectorId` closes a real
+provenance-conflation bug this task's instructions correctly flagged before it reached a frozen
+contract.
 
-**Consequences:** the structural validator needs one independent transition check per axis,
-mirroring `validateBootstrapManifestStructure()`'s per-field approach; every prior reference to
-`IdentitySymbol` elsewhere in this document is updated to `IdentityCandidate` for consistency
-(D3, D4, D6, D10, D12, the resulting boundary, and the proposed RED gate, below).
+**Consequences:** the structural validator needs a closed-field-set check on `IdentityCandidate`
+(per D6) and a domain check on every identity-defining field (per D3's repair), but no
+transition-legality table at all — there is no transition to make legal, since nothing on this type
+ever changes after construction. Every prior reference to `IdentitySymbol` elsewhere in this document
+remains updated to `IdentityCandidate` for consistency (D3, D4, D6, D9, D10, D12, the resulting
+boundary, and the proposed RED gate, below), now with the corrected immutable shape.
 
-**Deferred:** exact transition-legality tables (e.g., can a `merged` candidate return to
-`candidate`?) — settled fully at contract freeze (Gate G1-CONTRACT explicitly requires "state
-machines" as a package item), not sketched exhaustively here; the future friendly-alias registrar
-named above.
+**Deferred:** the exact query/index shape for forward-lineage views (a G1D/E concern once
+persistence is authorized, per D8); the future friendly-alias registrar named above; whether/how a
+consumer or later layer may treat same-membership candidates from different resolver versions as
+equivalent (explicitly the kernel's business never to decide).
 
 ---
 
@@ -581,10 +779,26 @@ admission) is the reusable, already-correct pattern. MrLore's `authority_score_c
 donor evidence of the precise failure mode to exclude.
 
 **Decision:** G1 defines, with a structural (not merely documentary) guarantee that none can
-reach admission: (a) **corroboration** = count of distinct, non-duplicate `EvidenceSpan`s/
-`Observation`s, computed the same way Onceaponatime already does (distinct source-unit count,
+reach admission: (a) **corroboration** — **repaired (this pass, Job 4).** The prior wording counted
+distinct `EvidenceSpan`*or*`Observation` ids interchangeably, which is wrong: an `Observation` is a
+detector's *claim about* a span, not a second independent witness. Three separate detector runs (or
+three runs of the same detector, or three different detectors) producing three `Observation`s that
+all cite the *same single* `EvidenceSpan` is one textual witness, not three — counting it as three
+would let detector multiplicity masquerade as evidence corroboration, exactly the inflation this
+correction closes. The corrected rule:
+`evidenceCorroborationCount = the number of distinct EvidenceSpan identities cited by the
+Observations under consideration` — **`EvidenceSpan` ids only, never `Observation` ids**, computed
+the same way Onceaponatime already does for its own analogous count (distinct source-unit count,
 never raw mention count — mirroring `BootstrapDiscoveryConfidence.supportingUnitCount`'s existing
-distinct-unit rule); (b) **detector confidence** = bounded, per-`Observation`, detector-supplied,
+distinct-unit rule, which already counts distinct cited units, not distinct citing records). Two
+genuinely separate occurrences of the same wording — two different offsets in one document, or the
+same wording in two different documents — remain two distinct `EvidenceSpan`s and legitimately
+corroborate as two witnesses (per D2's identity rule); a second `Observation` re-citing the *same*
+`EvidenceSpan` does not add a witness. This is explicitly a *separate* signal from **detector
+agreement** (do multiple independent detectors/resolvers agree on the same claim) — a real, useful
+signal the kernel may also expose, but never combined with `evidenceCorroborationCount` into one
+number, since they answer different questions ("how much distinct textual evidence exists" versus
+"how much do detectors/resolvers agree"); (b) **detector confidence** = bounded, per-`Observation`, detector-supplied,
 always attributed to a `detectorId`/`detectorVersion` (D9), never aggregated by the kernel into a
 project-wide score; (c) **salience** — excluded from G1's closed core entirely, deferred to a later
 retrieval-ranking consumer (R1); (d) **authority** — never a kernel-computed field, full stop; it
@@ -607,37 +821,52 @@ kind D4 already rejected for kind/type vocabulary. The corrected rule:
 kernel-owned record fields are closed (an exact, enumerated set per record type; any unlisted
     top-level field fails structural validation, unconditionally -- not because of what it is
     named, but because it is not one of the declared fields)
-
-consumer/domain extension metadata, if the kernel allows any at all, lives inside exactly one
-    explicitly-named, opaque container field (e.g. consumerMetadata?: Record<string, unknown>)
-    that kernel logic never reads or interprets -- only stores and returns verbatim
-
-kernel logic never interprets anything inside that opaque container, regardless of what its
-    keys are named
 ```
 
-Within that one designated extension container specifically (not the closed core schema, where the
-problem cannot arise at all), the corrected, non-fragile version of the original instinct is a
-**namespacing requirement**, not a word-blacklist: every extension key must be namespaced (e.g.
-`"onceaponatime:*"`), so a consumer cannot accidentally shadow or imply kernel authority with an
-unqualified key — the same structural technique D4 already uses for `kind`/`type`, applied
-consistently here instead of a second, different (and weaker) enforcement idiom.
+**Settled (this pass): no opaque extension container in G1A–C at all.** The prior revision left open
+whether an arbitrary `consumerMetadata?: Record<string, unknown>` container should exist in the
+first slice, gated by a namespacing rule. Reconsidered per instruction: `Record<string, unknown>`
+immediately re-opens the exact canonical-serialization problem D3's repair just closed by defining a
+narrow admissible value domain — an arbitrary-shaped consumer-supplied value is not, in general, a
+member of that domain, and it creates an authority-smuggling surface (a consumer could stash
+anything, including something that *reads* as an authority claim even if the kernel never interprets
+it) that G1A–C does not need to accept yet. The core already has an open extension point exactly
+where one is actually needed — namespaced `kind`/`type` strings, per D4 — and that is sufficient for
+everything G1A–C's own decisions require. The corrected rule:
+
+```text
+G1A-C has NO arbitrary consumerMetadata / unknown-value extension container of any kind.
+Every field on every G1A-C record type is declared by the frozen contract, full stop.
+kind/type (D4) remain the only open-vocabulary surface, and they are namespaced strings,
+    never arbitrary-shaped values.
+```
+
+An opaque, consumer-supplied metadata container is banked for a later version, introduced only once
+G1D (consumer decision/receipt storage) exists and a real consumer need is demonstrated — at that
+point it would live on `DecisionRecord`/`AdmissionReceiptRecord` (which are already opaque
+containers of consumer-supplied bytes by design, per D10), not retrofitted onto `Observation`/
+`IdentityCandidate`. The namespacing requirement from the immediately preceding pass is preserved as
+the rule for *that future container*, when it exists, rather than describing anything present in
+G1A–C today.
 
 **Why:** a closed schema is a stronger, non-fragile guarantee than a maintained blacklist of
 English words — precisely the lesson D4 already drew from `registry_builder.py`'s hardcoded
 overrides, now applied consistently to this decision instead of leaving one inconsistent,
-weaker mechanism standing beside it.
+weaker mechanism standing beside it. Removing the extension container entirely for G1A–C, rather
+than merely namespacing it, keeps the admissible value domain (D3) genuinely closed instead of
+punching a `Record<string, unknown>`-shaped hole in it on day one.
 
 **Consequences:** the frozen contract's structural validator needs one closed-field-set check per
-record type (already implied by "closed core," now made an explicit, testable requirement) plus one
-namespacing check on the single opaque extension container, replacing the withdrawn reserved-word
-list entirely.
+record type (already implied by "closed core," now made an explicit, testable requirement) and
+nothing else — no namespacing check is needed in G1A–C, since there is no extension container to
+namespace yet.
 
 **Deferred:** salience/relevance ranking entirely (named in the direction doc's own defer list as
 R1's job); any specific corroboration→display-confidence curve (Onceaponatime's own progression
 table stays in Onceaponatime's own `types.ts`, not the kernel — the kernel exposes the raw distinct
-count only); whether the kernel allows a `consumerMetadata` extension container at all in G1A–C, or
-only from G1D onward once a real consumer decision-record use case exists — not decided here.
+count only); an opaque `consumerMetadata`-style container, explicitly deferred to G1D and explicitly
+scoped to `DecisionRecord`/`AdmissionReceiptRecord` when it arrives, never to `Observation`/
+`IdentityCandidate`.
 
 ---
 
@@ -785,6 +1014,15 @@ needing to change.
 
 **Consequences:** G1B ("observation envelopes") can be contract-tested against B2's existing logic
 as an external reference fixture without importing or modifying `bootstrapDiscovery.ts`.
+
+**Clarification added this pass (see D5's repair):** `detectorId`/`detectorVersion` identify the
+component that produced an `Observation` from an `EvidenceSpan` — "this span expresses entity-like
+information." They are a genuinely separate concept from `IdentityCandidate`'s own `resolverId`/
+`resolverVersion` (D5), which identify the component that later decides which `Observation`s may
+refer to the same underlying referent — "these observations may cluster." A single component could,
+in principle, perform both roles, but the contract must never assume it is the same component or
+silently reuse one provenance field for the other; the two ids are stored, versioned, and fed into
+identity-key computation (D3) entirely independently.
 
 **Deferred:** an actual shared "language profile" registry format — not needed until a second
 detector genuinely exists.
@@ -978,14 +1216,16 @@ implemented now):
   ScopedStateAssertion                       (banked; not in G1A-C)
   DecisionRecord / AdmissionReceiptRecord    (banked; not in G1A-C)
 
-G1A-C FROZEN-SLICE CANDIDATES (the actual first implementation contract target):
+G1A-C FROZEN-SLICE CANDIDATES (the actual first implementation contract target; all four are
+immutable value types with content-derived identity -- see D3/D5's repair in this pass):
   SourceDocument
   EvidenceSpan
   Observation
-  IdentityCandidate
-  identity-resolution evidence (the merge/split candidate records IdentityCandidate's own
-      lifecycle already requires -- not a seventh type, part of IdentityCandidate's own shape)
-  pure corroboration / merge / split projections (functions, not new stored types)
+  IdentityCandidate         (an immutable snapshot; merge/split produce new candidates with
+                             backward lineage, never mutate or relabel their inputs -- D5)
+  pure corroboration / merge / split / lineage-lookup projections (functions, not stored types --
+      merge()/split() return new immutable values; forward-lineage views are read-only queries
+      over existing immutable candidates, per D5's repair)
 ```
 
 `ScopedStateAssertion` stays banked eventual architecture, picked up only when S1 (scoped state
@@ -1004,12 +1244,14 @@ arbitrary SourceDocuments (UTF-16 text, no book/chapter requirement)
         ↓
 exact, replayable EvidenceSpans (offset-based, independently re-verified)
         ↓
-Observation[] (open namespaced kind, presenceState, detector-attributed,
-               proposal-only, no admission authority)
+Observation[] (immutable, open namespaced kind, presenceState, detector-attributed
+               via detectorId/detectorVersion, proposal-only, no admission authority,
+               no mutable lifecycle field)
         ↓
-IdentityCandidate clusters (open namespaced type, merge/split preserves
-               every witness via content-derived ids, no repetition-based
-               auto-promotion, no "accepted" state anywhere)
+IdentityCandidate snapshots (immutable, open namespaced type, resolverId/resolverVersion-
+               attributed, distinct from detector provenance; merge/split produce NEW
+               snapshots with backward derivedFromCandidateIds/derivationKind lineage,
+               leaving every input byte-identical; no "accepted" state anywhere)
         ↓
 Onceaponatime adapter (buildBootstrapDiscoveryPayloadFromKernelEvidence, name
                provisional — pure, review-only, zero decisions/assignments,
@@ -1021,10 +1263,14 @@ existing explicit author decision → existing prepareBootstrap() → existing B
 ```
 
 First G1A–C frozen-slice types (four, plus pure projections — see above): `SourceDocument`,
-`EvidenceSpan`, `Observation`, `IdentityCandidate`. No persistence anywhere in this slice; no
-kernel-computed authority/salience field anywhere; no built-in kind/type vocabulary; no
+`EvidenceSpan`, `Observation`, `IdentityCandidate` — all four are genuinely immutable value types
+with content-derived identity computed over an explicit, bounded admissible value domain (D3's
+repair); none carries a mutable lifecycle/status field (D5's repair); `EvidenceSpan` validity and
+`IdentityCandidate` forward-lineage are both pure, on-demand projections, never stored state. No
+persistence anywhere in this slice; no kernel-computed authority/salience field anywhere; no
+built-in kind/type vocabulary; no arbitrary extension-metadata container (D6's repair); no
 book/chapter/character/Burdens/EngAIn primitive anywhere in the core; no kernel-minted mutable
-registrar state (identity is content-derived throughout, per D3's repair).
+registrar state.
 
 ## Explicitly deferred beyond this document (unchanged from the banked direction/blueprint, now
 reconfirmed against real code rather than merely asserted)
@@ -1047,83 +1293,121 @@ automatic corpus migration
 MrLore compatibility layer
 a second real consumer (EngAIn) and any cross-repo pin/version mechanism (D1)
 a consumer-facing friendly-alias registrar layered over IdentityCandidate ids
+an opaque consumerMetadata-style extension container (banked for G1D, scoped to DecisionRecord/
+    AdmissionReceiptRecord only, per D6's repair)
+treating same-membership IdentityCandidates from different resolver versions as equivalent
+    hypotheses (explicitly never the kernel's judgment to make, per D5's repair)
+a real collision-resistant digest algorithm (required before G1E's freeze specifically, per D3's
+    repair -- not an open-ended deferral)
 ```
 
-## Proposed — not implemented — next-stage G1 RED gate (revised, Correction 8)
+## Proposed — not implemented — next-stage G1 RED gate (revised again, this pass)
 
-This is a **surgical, first-slice-only** proposal, narrowed from the prior revision to match the
-G1A–C/eventual-architecture split above: it proves only `SourceDocument`, `EvidenceSpan`,
-`Observation`, and `IdentityCandidate`, never `ScopedStateAssertion` or `DecisionRecord`/
-`AdmissionReceiptRecord` (those get their own, separately authorized gates when S1/G1D exist), and
-never the Onceaponatime adapter's own behavior in detail (that is D12's own future A1 gate, per the
-blueprint — this RED only proves the kernel remains structurally unaware of Bootstrap, not that the
-adapter itself works correctly). It still does not replace the blueprint's own
-G1-CONTRACT/G1-RED gate process, which governs the real freeze-then-RED sequence, and it is still a
-proposal, not RED — writing it is explicitly out of scope for this increment.
+This is a **surgical, first-slice-only** proposal, revised again to reflect this pass's immutability,
+resolver-provenance, canonical-serialization-domain, and corroboration corrections. It proves only
+`SourceDocument`, `EvidenceSpan`, `Observation`, and `IdentityCandidate` as the genuinely immutable
+values this pass defines them to be — never `ScopedStateAssertion` or `DecisionRecord`/
+`AdmissionReceiptRecord` (those get their own, separately authorized gates when S1/G1D exist), never
+persistence atomicity (G1E), never raw-JSON ingress validation (wrong abstraction boundary for a
+kernel that receives already-parsed values — see point 11's removal below), and never the
+Onceaponatime adapter's own detailed behavior (D12's own future A1 gate). It still does not replace
+the blueprint's own G1-CONTRACT/G1-RED gate process, and it is still a proposal, not RED — writing it
+is explicitly out of scope for this increment.
 
-1. Arbitrary `SourceDocument`s (no book/chapter/directory convention) produce structurally valid,
-   deeply-frozen kernel values; a document missing/malformed in any required field fails closed.
+1. Arbitrary, neutral `SourceDocument`s (no book/chapter/directory convention) produce structurally
+   valid, deeply-frozen kernel values; a document missing/malformed in any required field fails
+   closed.
 2. `EvidenceSpan` coordinates are UTF-16 code-unit offsets (a TypeScript-representation choice, per
-   D2's hardening-pass clarification, not a universality claim) that independently re-verify against
-   the exact pinned `SourceDocument` text; a tampered/mismatched `exactText` fails closed.
-3. Repeated identical text at different offsets in one document remains distinct; identical text
-   across two documents never collides — both by construction of the `(sourceDocumentId, offsets)`
-   identity, not by a fingerprint check.
-4. Evidence validation fails against stale/changed source text — reusing
-   `sourceDocumentsAreIdentical()`'s exact field-by-field comparison, never the fingerprint alone.
-5. `Observation`s remain immutable and source-traceable after any later `IdentityCandidate`
-   merge/split/resolution-state change — an `Observation` fetched by its own id before and after such
-   a change is byte-identical.
-6. An `IdentityCandidate`'s resolution status never moves past `candidate` from `Observation` volume
-   alone — corroboration count rises with repetition; resolution state changes only via an explicit
-   call representing a resolution decision, never automatically from observation count.
-7. Corroboration is computed from the count of distinct `EvidenceSpan`/`Observation` ids, never raw
-   mention count (reusing the distinct-unit rule `BootstrapDiscoveryConfidence.supportingUnitCount`
-   already proves out) — a toxic fixture with many duplicate-content, colliding-fingerprint
-   observations must still report the correct *distinct* count.
-8. A merge or split operation preserves every contributing `Observation`/`EvidenceSpan` reference —
-   none deleted, none silently reassigned; the superseded `IdentityCandidate`(s) remain independently
-   retrievable by their own (unchanged) ids with an explicit `supersededBy` pointer, never deleted or
-   overwritten; the toxic fixture "split candidate reassigns evidence silently" must fail closed.
-9. An unknown/unsupported `Observation.kind` or `IdentityCandidate.type` is preserved as
-   unknown/unsupported through every kernel-core operation — never coerced into a recognized kind by
-   any code path.
-10. **Fingerprint-versus-identity (new, Correction 1):** two distinct `Observation`s or
-    `EvidenceSpan`s constructed to share the same short diagnostic (FNV-1a) fingerprint but with
-    genuinely different `stableSerialize()`-based content never become the same record through any
-    kernel operation — any fingerprint-keyed lookup structure must return every colliding candidate
-    for a full structural equality check, never the first fingerprint match alone.
-11. G1A–C perform zero durable writes; every operation is a pure function over supplied values,
-    verified by re-running twice on identical input and asserting byte-identical, reference-fresh
-    output (no hidden mutation of caller-owned input).
-12. **Kernel unaware of Bootstrap, and closed-schema-first (new/merged, Corrections 1, 4, 5, 6):** a
-    static source scan of the kernel package proves (a) no kernel-core type, constant, or default
+   D2's clarification, not a universality claim) that independently re-verify — by exact replay, not
+   a copied quote — against the exact pinned `SourceDocument` text; a tampered/mismatched
+   `exactText` fails closed.
+3. Identical text at distinct offsets in one document, and identical text across two different
+   documents, both remain distinct `EvidenceSpan`s — by construction of the
+   `(sourceDocumentId, offsets)` identity, never by a fingerprint check.
+4. A stale/changed bound source causes `validateEvidenceSpan()` to report `invalid` for the affected
+   spans, without mutating the old `EvidenceSpan` object in any way — the same object, fetched before
+   and after the source change, remains byte-identical; only the pure validity projection's answer
+   changes.
+5. `Observation` is immutable and source-traceable: it records what was observed, which
+   `EvidenceSpan`s support it, and `detectorId`/`detectorVersion`/`languageProfile` provenance — and
+   carries no lifecycle/disposition field of any kind (D5's repair). Fetched by its own id before and
+   after any later `IdentityCandidate` merge/split, it is byte-identical.
+6. `IdentityCandidate` is an immutable hypothesis snapshot: it carries `type`,
+   `memberObservationIds`, `resolverId`/`resolverVersion` (distinct from an `Observation`'s own
+   `detectorId`/`detectorVersion` — D9's clarification), and `derivedFromCandidateIds`/
+   `derivationKind`/`derivationEvidence` — and has no accepted/canonical/approved state anywhere on
+   the type, and no `status`/`resolutionLifecycle`/`supersededBy` field at all.
+7. `merge(candidateA, candidateB, evidence)` produces a **new** `IdentityCandidate` with
+   `derivationKind: 'merge'` and `derivedFromCandidateIds: [A.id, B.id]`; `candidateA` and
+   `candidateB`, fetched by their own ids after the call, are byte-identical to before it — no field
+   on either was written.
+8. `split(candidate, evidence)` produces **new** `IdentityCandidate`(s) with `derivationKind:
+   'split'` and `derivedFromCandidateIds: [candidate.id]`; `candidate`, fetched by its own id after
+   the call, is byte-identical to before it.
+9. Every original `Observation`/`EvidenceSpan` referenced by a pre-merge/pre-split
+   `IdentityCandidate` remains independently addressable, by its own unchanged id, after any number
+   of subsequent merge/split operations — none is deleted, hidden, or silently reassigned.
+10. **Corroboration is evidence-based, not observation-based (Job 4, this pass):**
+    `evidenceCorroborationCount` counts distinct **`EvidenceSpan`** identities only. A toxic fixture
+    with three separate `Observation`s (from one detector run three times, or three different
+    detectors) all citing the *same single* `EvidenceSpan` must report a corroboration count of
+    **one**, not three. A toxic fixture with the same wording appearing as two genuinely distinct
+    `EvidenceSpan`s (two offsets, or two documents) must report a corroboration count of two.
+11. **Canonical serialization is bounded to an explicit admissible domain (Job 3, this pass):** the
+    identity-key computation rejects, rather than silently accepts or coerces, every value outside
+    the domain D3 defines — required toxic cases: a `-0` numeric field (must normalize to `0` or be
+    rejected, per the frozen contract's own choice, but never silently pass through as a distinct
+    value from `0`); `NaN`/`Infinity`/`-Infinity`; a sparse array (a hole, not a value); a `Date`,
+    `Map`, `Set`, or class-instance value where a plain object is expected; a non-`Object.prototype`,
+    non-null-prototype object; a symbol-keyed or non-enumerable property. Each is its own isolated
+    fixture, per the blueprint's RED-domain separation rule.
+12. **Fingerprint-versus-identity (Job 1 from the prior pass, retained):** two distinct
+    `Observation`s or `EvidenceSpan`s constructed to share the same short diagnostic (FNV-1a)
+    fingerprint but with genuinely different admissible-domain content never become the same record
+    through any kernel operation; any fingerprint-keyed lookup structure must return every colliding
+    candidate for a full structural-equality check, never the first fingerprint match alone.
+13. An unknown/unsupported `Observation.kind` or `IdentityCandidate.type` is preserved as
+    unknown/unsupported through every kernel-core operation, including merge/split — never coerced
+    into a recognized kind by any code path.
+14. Repeated evidence, however voluminous, never by itself establishes an accepted/canonical
+    identity or admission state — there is no code path from `evidenceCorroborationCount`, detector
+    confidence, or `Observation`/`IdentityCandidate` volume to any field resembling
+    authority/canon/approval, because no such field exists anywhere in the G1A–C core (D6's repair).
+15. Given identical inputs, every G1A–C operation (construction, `validateEvidenceSpan()`,
+    `merge()`, `split()`, corroboration computation) produces byte-identical output on repeated runs,
+    performs zero durable writes, and never mutates a caller-supplied input value — verified by
+    re-running twice and asserting both output equality and input reference/content stability.
+16. A static source scan of the kernel package proves: (a) no kernel-core type, constant, or default
     value names a real project identity (no "Vale"/"Luminaire"/"Geralt"-shaped literal, no
-    `book_XX_chNNN` convention — mirroring B2/B3's reachable-import-graph tests); (b) no kernel-package
-    file imports anything from `app/src` or `app/server`, or references `BootstrapProposal`,
+    `book_XX_chNNN` convention — mirroring B2/B3's reachable-import-graph tests); (b) no kernel-
+    package file imports anything from `app/src` or `app/server`, or references `BootstrapProposal`,
     `actor_proposal`/`object_proposal`/etc., `BootstrapManifest`, or `BootstrapDiscoveryPayload` by
-    name; (c) every kernel-core record type rejects any field outside its own exact, enumerated field
-    set (closed-schema check, replacing the withdrawn reserved-fieldname blacklist) — an attempt to
-    add a top-level `authority`/`canonical`/`approved`/`admitted` field (or any other unlisted field)
-    to a core record fails structural validation unconditionally.
+    name (D1/D12's kernel-unaware-of-Bootstrap requirement); (c) every kernel-core record type
+    rejects any field outside its own exact, enumerated field set, including an attempted top-level
+    `authority`/`canonical`/`approved`/`admitted` field (closed-schema check, D6's repair) — and (d)
+    no kernel-core record type declares an arbitrary `Record<string, unknown>`-shaped extension
+    field of any kind (D6's repair: no extension container exists in G1A–C at all).
 
-Toxic fixtures required by the blueprint's own Gate G1-RED list that apply to this narrowed
-first slice (repeated text same/different document, multibyte Unicode before/inside a span, changed
-source with stale coordinates, duplicate JSON keys, non-finite numbers, shuffled record order,
-duplicate ids, unknown ontology term, a Burdens-shaped identity embedded in a purported core config,
-a merge candidate dropping one witness, a split candidate silently reassigning evidence) are all
-represented, each as its own isolated failing test per the blueprint's RED-domain separation rule.
-Toxic fixtures specific to consumer-qualified records or persistence atomicity (a high-confidence
-proposal with no consumer decision; one consumer's admission record presented as another's;
-interrupted/retried publication) are explicitly deferred to G1D/E's own, separately authorized RED,
-not folded in here, per the eventual-architecture/first-slice split above.
+**Explicitly excluded from this first RED, per instruction** (each belongs to its own,
+separately-authorized gate, named where applicable):
 
-The Onceaponatime adapter's own detailed behavior (mapping table correctness, evidence
-re-derivation, zero-decision/zero-assignment proof, the exact reachable-import-graph ban on
-`decideBootstrapManifestEntry`/`prepareBootstrap`/`updateActiveProject`) remains a separate,
-adapter-specific RED gate under the blueprint's own A1 gate, authorized only once G1A–C's own
-contract is frozen and shipped — not folded into the kernel's own RED, consistent with "do not force
-adapter tests... into this first RED" from this task's own instructions.
+```text
+DecisionRecord / AdmissionReceiptRecord content and storage           -> G1D's own RED
+ScopedStateAssertion                                                   -> S1's own RED
+Onceaponatime adapter behavior (mapping table, evidence re-derivation,
+    zero-decision/zero-assignment proof, its own reachable-import-graph
+    ban on decideBootstrapManifestEntry/prepareBootstrap/
+    updateActiveProject)                                               -> D12's future A1 gate
+persistence atomicity / idempotent retry / crash recovery              -> G1E's own RED, if G1E ships
+duplicate-JSON-key detection                                            -> a future raw-JSON ingress
+    adapter's own RED, if the kernel ever gains a raw-text entry point
+    (removed from this list this pass: G1A-C's public API receives
+    already-parsed TypeScript/JavaScript values, per every decision
+    above; duplicate object keys are already resolved -- destroyed --
+    by whatever parsed the JSON before the kernel ever sees a value,
+    so a kernel-side duplicate-key test would test the wrong boundary)
+historical retrieval, continuity auditing, salience ranking            -> R1/C1, later
+```
 
 ---
 
@@ -1174,3 +1458,14 @@ buildBootstrapManifest()).
 
 No MrLore file was re-read or modified for this pass (none of the seven corrections required new
 MrLore evidence beyond what the original D1–D12 pass already gathered).
+
+## Files re-inspected for this pre-freeze consistency pass
+
+No new file reads were needed: all five jobs in this pass are internal-consistency repairs to
+decisions already grounded in evidence gathered across the two prior passes — `stableSerialize()`'s
+actual `JSON.stringify()`-based number handling (already read in full in the original D1–D12 pass),
+`LITERARY_MECHANICS.md`'s "Entity Splitting"/"Entity Merging"/"Confidence Revision" sections and
+`PROPOSAL.md`'s "Stable Internal Identity" section (both read in full in the immediately preceding
+hardening pass), and `BootstrapDiscoveryConfidence.supportingUnitCount`'s existing distinct-unit rule
+(`bootstrapManifest.ts`, read in the original pass). This document (its immediately prior revision)
+was read in full before editing. No MrLore file, and no other new file, was read for this pass.
