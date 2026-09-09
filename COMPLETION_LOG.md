@@ -604,3 +604,69 @@ additions, not a `suggestedRefinements[]` entry, so B4c3's `USE THIS SUGGESTION`
 test-proven but not yet visually exercised live -- see TODO.md for the plan to try a fresh session.
 
 **Not yet done:** B4d (End-to-End Authority Proof). See `TODO.md`.
+
+## B4d -- End-to-End Authority Proof
+
+B4 was split into four independently frozen/RED/GREEN increments; B4d is the final one, proving the
+full chain together against the real wired surfaces rather than a fresh mock standing in for a
+neighboring stage's output. See `TODO.md`'s "B4d -- End-to-End Authority Proof" section for the
+frozen contract.
+
+- Frozen (`9899868`): `BootstrapReceiptEntry` had exactly `entryId, kind, decision,
+  supportedForApplication, proposed, admitted, applied` -- no refinement-provenance field at all,
+  confirmed by reading `prepareBootstrap.ts` in full. B4a's, B4b's, and B4c3's own deferred-scope
+  notes had each already named this specific gap, and no existing test ran the real
+  `buildBootstrapManifest() -> mergeBootstrapRefinementArtifact() ->
+  selectBootstrapReviewSuggestion()/decideBootstrapReviewEntry() -> prepareBootstrap()` chain in one
+  pass -- every prior B4 suite proves its own stage in isolation against a hand-built fixture
+  standing in for its neighbor.
+- RED (`ea8768f`) froze `tests/bootstrapEndToEndAuthorityProof.test.ts`, running that real chain
+  against one hand-built `BootstrapRefinementArtifact` fixture (no live Hermes call, matching B4a/
+  B4b's own established convention). Covers all 7 points of the frozen gate: full-pipeline receipt
+  shape (an addition's row carries only `refinementProvenance`; a suggestion-target's row carries
+  only `selectedRefinementCandidateDigest`; an untouched B2 row carries neither); every pre-existing
+  receipt field staying byte-identical to what today's receipt would have produced; a rejected
+  AI-added entry's row still carrying `refinementProvenance` with `admitted: null`/`applied: false`;
+  a manifest with any entry still `pending` still making `prepareBootstrap()` throw; receipt
+  `id`/`admissionFingerprint` unaffected by selection provenance; a zero-refinement baseline's
+  receipt carrying neither new field; and no production UI-code changes
+  (`BootstrapReviewWorkspace.tsx`/`StructuralReviewPanel.tsx`/`StoryEditor.tsx` byte-identical).
+  Genuinely red behaviorally (the frozen field absence, not an import/type accident), confirmed
+  clean under `tsc --noEmit`.
+- GREEN (`b2fa1ee`) touches exactly `src/lib/prepareBootstrap.ts`: its existing `receiptEntries`
+  projection now copies `entry.refinementProvenance`/`entry.selectedRefinementCandidateDigest`
+  straight through from the decided `BootstrapManifestEntry`, conditionally omitted when absent --
+  never inferred, never recomputed, decision outcome never alters origin provenance. One
+  pre-existing B4c3-era regression test (`tests/bootstrapReviewSuggestionSelection.test.ts`) that had
+  deliberately pinned the pre-B4d absence (commented "that is B4d's job") was updated to assert the
+  new closed, additive field set instead -- the exact seam B4d was built to close, not scope creep.
+  No new decision/authority function, no fingerprint/id change (both already excluded
+  `selectedRefinementCandidateDigest` per B4c3), and zero UI-file changes.
+- Verified: full `npm test`, `npm run lint` (`tsc --noEmit`), `npm run build`, and `git diff --check`
+  all pass. Diff scope is `prepareBootstrap.ts` plus the one updated pre-existing test file only.
+
+**Pushed to `origin/main`** (at `b2fa1ee`).
+
+## B4 CLOSED
+
+B4 -- Optional AI Refinement is closed. All of B4a (`ded2db7`), B4a hardening (`b24d806`), B4b
+(`de787b0`), B4b suggestion-evidence hardening (`c50ce9e`), B4c1 (`fbf06ec`), B4c2 (`2ac1c7f`), B4c3
+(`463e9d0`/`6894214`), and B4d (`ea8768f`/`b2fa1ee`) are shipped, verified, and pushed to
+`origin/main`.
+
+The full chain is now proven together end to end, against the real wired surfaces: B2 deterministic
+discovery -> optional Hermes refinement -> B3 author review (approve/edit/reject, POV/current-location
+assignment, explicit suggestion selection) -> B3d `prepareBootstrap()` atomic canonical admission.
+`BootstrapReceiptEntry` now honestly preserves the applicable B4 provenance on each row --
+`refinementProvenance` when the manifest entry itself originated as a B4 AI addition,
+`selectedRefinementCandidateDigest` when an existing entry's admitted value came from an explicitly
+selected AI suggestion -- copied from the decided manifest state, never reconstructed after the fact.
+
+The authority chain this closes out remains exactly as designed throughout B4: AI refinement is
+another proposal source, never canon, never a replacement for B2, never automatic approval, never a
+direct mutation, and never a second review or admission path. Author review remains the sole
+admission authority; `prepareBootstrap()` remains the sole canonical-mutation authority.
+
+This closure unblocks G1 design (see `TODO.md`'s "Banked first direction after B4 closes" section
+and `POST_B4_LORE_EVIDENCE_KERNEL_DIRECTION.md`). G1 design has not begun and no G1 D1-D12 design
+question is answered here.

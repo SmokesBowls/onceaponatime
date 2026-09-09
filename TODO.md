@@ -20,7 +20,7 @@ B3c — Author Decisions + Explicit Assignments  ✅ done, pushed (1a93177)
         ↓
 B3d — Atomic Canonical Admission  ✅ done, not yet pushed (14d86e2)
         ↓
-B4 — Optional AI Refinement  ← split into B4a/B4b/B4c/B4d; B4a ✅ done, pushed (ded2db7); B4a hardening ✅ done, pushed (3ab5357); B4b ✅ done, pushed (de787b0); B4c1 ✅ done, pushed (fbf06ec); B4b suggestion-evidence hardening ✅ done, pushed (c50ce9e); B4c2 ✅ done, pushed (2ac1c7f); B4c3 ✅ done, pushed (6894214); B4d contract frozen, RED not yet written
+B4 — Optional AI Refinement  ← split into B4a/B4b/B4c/B4d; B4a ✅ done, pushed (ded2db7); B4a hardening ✅ done, pushed (3ab5357); B4b ✅ done, pushed (de787b0); B4c1 ✅ done, pushed (fbf06ec); B4b suggestion-evidence hardening ✅ done, pushed (c50ce9e); B4c2 ✅ done, pushed (2ac1c7f); B4c3 ✅ done, pushed (6894214); B4d ✅ done (RED ea8768f, GREEN b2fa1ee) — B4 CLOSED
 ```
 
 ### B2 — Deterministic Bootstrap Discovery ✅ shipped
@@ -728,7 +728,7 @@ error-carrying prop, no new display component.
 - No B4/AI work, no schema expansion, no changes to `prepareBootstrap()` itself beyond what
   B3c's own `resolveAdmittedBootstrapProposal()` export already required.
 
-### B4 — Optional AI Refinement  ← contract draft; not frozen, no RED/implementation yet
+### B4 — Optional AI Refinement  ✅ B4 CLOSED (B4a, B4a hardening, B4b, B4b hardening, B4c1, B4c2, B4c3, B4d all shipped and pushed)
 
 #### B4 split into four increments (design decision, settled before B4a RED)
 
@@ -2298,7 +2298,7 @@ exactly-one-match count replacing `.find()`-style first-match resolution, both e
 in `decideBootstrapManifestEntry()`, `selectBootstrapReviewSuggestion()`, and
 `validateBootstrapManifestStructure()`. RED is written against this contract next.
 
-##### B4d — End-to-End Authority Proof  ← contract frozen; awaiting RED
+##### B4d — End-to-End Authority Proof  ✅ shipped (contract 9899868, RED ea8768f, GREEN b2fa1ee)
 
 Drafted after inspecting the exact current surfaces (not the master B4 draft's speculative prose):
 `BootstrapReceiptEntry`/`BootstrapReceipt`/`prepareBootstrap()` (`src/lib/prepareBootstrap.ts`, read in
@@ -2425,6 +2425,57 @@ LLM writes with nothing verified against source evidence; its "Story State" is a
 LLM-regenerated text block after every chapter), structurally less rigorous than this project's
 deterministic-evidence + explicit-author-authority chain (B1-B3d) -- not a model to imitate
 wholesale, just a source for these two specific ideas.
+
+### Banked first direction after B4 closes — Lore Evidence Kernel / G1
+
+`POST_B4_LORE_EVIDENCE_KERNEL_DIRECTION.md` is the governing banked direction for the first
+post-B4 architecture workload. It does **not** authorize implementation before B4d is complete,
+verified, reconciled here and in `COMPLETION_LOG.md`, and B4 is explicitly closed.
+
+`POST_B4_MRLORE_MECHANICS_INTEGRATION_BLUEPRINT.md` is the execution blueprint beneath that
+direction. It records the design questions, contract/RED gates, smallest implementation slices,
+MrLore donor disposition map, Onceaponatime adapter lane, verification matrix, and stop rules so
+later work does not improvise architecture from a loose TODO list. The blueprint is planning only;
+it does not authorize any currently gated work.
+
+The direction establishes that MrLore is a donor of durable evidence, chronology, identity,
+scoped-state, continuity, and query/index capabilities -- not a lore authority for Onceaponatime
+and not a whole-application dependency. The shared seam is a neutral Lore Evidence Kernel.
+The kernel may preserve evidence, proposals, consumer-supplied decisions, and receipts, but it
+must never decide what constitutes canonical truth. Onceaponatime retains literary authority;
+future consumers such as EngAIn retain their own separate authority semantics.
+
+The first post-B4 target is **G1 — Generalized Evidence + Identity Registry Contract**, followed
+by explicit resolution of its open design questions, a frozen contract, a separately authorized
+RED gate, and only then the smallest implementation. Continuity audit and historical/context
+retrieval remain later consumers of that substrate, not the starting slice. The active sequence is:
+
+```text
+finish B4d                                       ✅ done (RED ea8768f, GREEN b2fa1ee)
+    ↓
+verify + reconcile                               ✅ done (this entry)
+    ↓
+declare B4 closed                                ✅ B4 CLOSED
+    ↓
+resolve G1 design questions                      ← next; not yet started
+    ↓
+freeze G1 neutral evidence + identity contract
+    ↓
+G1 RED
+    ↓
+generalized evidence/identity implementation
+    ↓
+Onceaponatime Bootstrap Manifest adapter
+    ↓
+historical retrieval → identity expansion → scoped state → continuity audit
+```
+
+**B4 CLOSED.** All four B4 increments (B4a, B4a hardening, B4b, B4b hardening, B4c1, B4c2, B4c3,
+B4d) are shipped, verified, and pushed to `origin/main`. G1 design is now unblocked; G1 design has
+not begun and no G1 D1–D12 question is answered here.
+
+Before that sequence reaches RED: no MrLore changes, no kernel implementation, no retrieval
+work, and no continuity-audit work.
 
 - **Advisory continuity audit.** Add a periodic or on-demand review-and-report operation that
   examines accepted narrative state for possible continuity problems and produces evidence-backed
