@@ -2457,9 +2457,9 @@ verify + reconcile                               ✅ done (this entry)
     ↓
 declare B4 closed                                ✅ B4 CLOSED
     ↓
-resolve G1 design questions                      ← next; not yet started
+resolve G1 design questions                      ✅ done (see G1_LORE_EVIDENCE_KERNEL_DESIGN.md)
     ↓
-freeze G1 neutral evidence + identity contract
+freeze G1 neutral evidence + identity contract    ← next; not yet started
     ↓
 G1 RED
     ↓
@@ -2473,6 +2473,9 @@ historical retrieval → identity expansion → scoped state → continuity audi
 **B4 CLOSED.** All four B4 increments (B4a, B4a hardening, B4b, B4b hardening, B4c1, B4c2, B4c3,
 B4d) are shipped, verified, and pushed to `origin/main`. G1 design is now unblocked; G1 design has
 not begun and no G1 D1–D12 question is answered here.
+
+**G1 design questions resolved** (design-only, no contract freeze, no RED, no implementation) in
+`G1_LORE_EVIDENCE_KERNEL_DESIGN.md`. See that file for the full D1–D12 decision record.
 
 Before that sequence reaches RED: no MrLore changes, no kernel implementation, no retrieval
 work, and no continuity-audit work.
